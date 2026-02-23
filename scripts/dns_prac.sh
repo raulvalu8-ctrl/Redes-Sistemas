@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# =========================
-#  DNS PRO (MAGEIA / BIND)
-# =========================
-
-# --- Rutas y archivos ---
 ZONES_DIR="/var/named/pro-zones"
 MANAGED_ZONES_CONF="/etc/named.d/pro-zones.conf"
 NAMED_CONF="/etc/named.conf"
@@ -40,7 +35,6 @@ enable_named() {
   systemctl enable --now named >/dev/null 2>&1 || true
 }
 
-# --- Detectar IP de una interfaz ---
 obtener_datos_red() {
   read -r -p "Introduce la interfaz de red (ej. enp0s3, eth0): " INTERFAZ
   INTERFAZ="${INTERFAZ// /}"
@@ -61,7 +55,6 @@ obtener_datos_red() {
   return 0
 }
 
-# --- Asegurar include en named.conf ---
 asegurar_include_named_conf() {
   if [ ! -f "$NAMED_CONF" ]; then
     echo "[ERROR] No existe $NAMED_CONF. ¿Está instalado BIND?" >&2
@@ -74,7 +67,6 @@ asegurar_include_named_conf() {
   fi
 }
 
-# --- Reconstruir archivo de zonas administradas ---
 actualizar_zonas_conf() {
   : > "$MANAGED_ZONES_CONF"
 
@@ -95,7 +87,6 @@ EOF
   shopt -u nullglob
 }
 
-# --- Validar + recargar named ---
 aplicar_y_recargar() {
   chown -R named:named "$ZONES_DIR" 2>/dev/null || true
   chmod 750 "$ZONES_DIR" 2>/dev/null || true
@@ -114,7 +105,6 @@ aplicar_y_recargar() {
   return 0
 }
 
-# --- Serial dinámico YYYYMMDDnn ---
 serial_hoy() {
   date +"%Y%m%d01"
 }
@@ -258,16 +248,13 @@ main() {
 
   while true; do
     clear
-    echo "========================================"
-    echo "     ADMINISTRADOR DNS PRO (MAGEIA)     "
-    echo "========================================"
+    echo "administrador dns "
     echo "1. Enlistar Dominios"
     echo "2. Agregar Dominio (incluye fijar IP)"
     echo "3. Eliminar Dominio"
     echo "4. Probar Resolución Local"
     echo "5. Monitoreo"
     echo "6. Salir"
-    echo "----------------------------------------"
     read -r -p "Selecciona una opción: " opcion
 
     case "${opcion:-}" in
