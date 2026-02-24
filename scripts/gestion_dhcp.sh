@@ -6,15 +6,19 @@ NC='\033[0m'
 
 validar_ip() {
     local ip=$1
+    # 1. Validar formato básico (0.0.0.0 a 255.255.255.255)
     if [[ ! $ip =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
         echo -e "${RED}IP invalido${NC}"
         return 1
     fi
 
-    if echo "$ip" | grep -qE "^0\.|^127\.|^169\.254\.|^22[4-9]\.|^23[0-9]\.|^255\.255\.255\.255\."; then
+    # 2. Validar rangos reservados (Escapando los puntos correctamente)
+    # Agregamos \\. para que el punto sea literal
+    if echo "$ip" | grep -qE "^0\\.|^127\\.|^169\\.254\\.|^22[4-9]\\.|^23[0-9]\\.|^255\\.255\\.255\\.255"; then
         echo -e "${RED}La IP pertenece a un rango reservado${NC}"
         return 1
     fi
+    
     return 0
 }
 
