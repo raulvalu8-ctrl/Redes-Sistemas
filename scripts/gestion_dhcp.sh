@@ -11,7 +11,7 @@ validar_ip() {
         return 1
     fi
 
-    if echo "$ip" | grep -qE "^0\.|^1\.|^127\.|^169\.254\.|^22[4-9]\.|^23[0-9]\.|^255\.255\.255\.255\."; then
+    if echo "$ip" | grep -qE "^0\.|^127\.|^169\.254\.|^22[4-9]\.|^23[0-9]\.|^255\.255\.255\.255\."; then
         echo -e "${RED}La IP pertenece a un rango reservado${NC}"
         return 1
     fi
