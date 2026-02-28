@@ -1,272 +1,97 @@
-#!/usr/bin/env bash
-set -uo pipefail
+#!/bin/bash
+# REQUISITO: Ejecutar con sudo
 
-ZONES_DIR="/var/named/pro-zones"
-MANAGED_ZONES_CONF="/etc/named.d/pro-zones.conf"
-NAMED_CONF="/etc/named.conf"
+# Colores para que se vea bien
+VERDE='\033[0;32m'
+CYAN='\033[0;36m'
+AMARILLO='\033[1;33m'
+RESET='\033[0m'
 
-mkdir -p "$ZONES_DIR"
-mkdir -p "$(dirname "$MANAGED_ZONES_CONF")"
-
-pause() { echo; read -r -p "Presiona ENTER para continuar..." _; }
-
-require_root() {
-  if [ "${EUID:-$(id -u)}" -ne 0 ]; then
-    echo "[ERROR] Ejecuta como root: sudo $0" >&2
-    exit 1
-  fi
-}
-
-cmd_exists() { command -v "$1" >/dev/null 2>&1; }
-
-install_bind_if_needed() {
-  if ! cmd_exists named || ! cmd_exists named-checkconf || ! cmd_exists named-checkzone; then
-    echo "[i] Instalando BIND (bind, bind-utils)..."
-    if cmd_exists urpmi; then
-      urpmi --auto bind bind-utils >/dev/null
-    else
-      echo "[ERROR] No encontré urpmi. Instala bind y bind-utils manualmente." >&2
-      exit 1
-    fi
-  fi
-}
-
-enable_named() {
-  systemctl enable --now named >/dev/null 2>&1 || true
-}
-
-obtener_datos_red() {
-  read -r -p "Introduce la interfaz de red (ej. enp0s3, eth0): " INTERFAZ
-  INTERFAZ="${INTERFAZ// /}"
-
-  if ! cmd_exists ip; then
-    echo "[ERROR] No existe el comando 'ip'. Instala iproute2." >&2
-    return 1
-  fi
-
-  IP_SUGERIDA="$(ip -4 addr show "$INTERFAZ" 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1 | head -n1)"
-
-  if [ -z "${IP_SUGERIDA:-}" ]; then
-    echo "[!] No se encontró IP en $INTERFAZ. Revisa con: ip a" >&2
-    return 1
-  fi
-
-  echo "[+] IP detectada en $INTERFAZ: $IP_SUGERIDA"
-  return 0
-}
-
-asegurar_include_named_conf() {
-  if [ ! -f "$NAMED_CONF" ]; then
-    echo "[ERROR] No existe $NAMED_CONF. ¿Está instalado BIND?" >&2
-    exit 1
-  fi
-
-  if ! grep -qF "$MANAGED_ZONES_CONF" "$NAMED_CONF"; then
-    echo "[i] Agregando include a $NAMED_CONF -> $MANAGED_ZONES_CONF"
-    printf '\n// Zonas administradas por DNS PRO\ninclude "%s";\n' "$MANAGED_ZONES_CONF" >> "$NAMED_CONF"
-  fi
-}
-
-actualizar_zonas_conf() {
-  : > "$MANAGED_ZONES_CONF"
-
-  shopt -s nullglob
-  for archivo_zona in "$ZONES_DIR"/db.*; do
-    if [ -f "$archivo_zona" ]; then
-      dominio="$(basename "$archivo_zona" | sed 's/^db\.//')"
-      cat >> "$MANAGED_ZONES_CONF" <<EOF
-
-zone "$dominio" IN {
-  type master;
-  file "$archivo_zona";
-  allow-update { none; };
-};
-EOF
-    fi
-  done
-  shopt -u nullglob
-}
-
-aplicar_y_recargar() {
-  chown -R named:named "$ZONES_DIR" 2>/dev/null || true
-  chmod 750 "$ZONES_DIR" 2>/dev/null || true
-  chmod 640 "$ZONES_DIR"/db.* 2>/dev/null || true
-  chmod 640 "$MANAGED_ZONES_CONF" 2>/dev/null || true
-
-  if ! named-checkconf "$NAMED_CONF" >/dev/null 2>&1; then
-    echo "[ERROR] named-checkconf falló. Revisa $NAMED_CONF y $MANAGED_ZONES_CONF" >&2
-    named-checkconf "$NAMED_CONF" || true
-    return 1
-  fi
-
-  systemctl reload named >/dev/null 2>&1 || systemctl restart named >/dev/null 2>&1
-
-  echo -e "\n[+] Configuración aplicada y named recargado."
-  return 0
-}
-
-serial_hoy() {
-  date +"%Y%m%d01"
-}
-
-crear_zona() {
-  obtener_datos_red || return 1
-
-  echo
-  echo "¿Qué IP deseas usar para el dominio?"
-  echo "  1) Usar IP detectada: $IP_SUGERIDA"
-  echo "  2) Ingresar IP manualmente"
-  read -r -p "Opción (1/2): " opcion_ip
-
-  if [ "${opcion_ip}" = "2" ]; then
-    read -r -p "Introduce la IP: " IP_MANUAL
-    IP_MANUAL="${IP_MANUAL// /}"
-    if [ -z "$IP_MANUAL" ]; then
-      echo "[ERROR] IP vacía." >&2
-      return 1
-    fi
-    IP_SUGERIDA="$IP_MANUAL"
-  fi
-
-  echo "[+] IP a usar: $IP_SUGERIDA"
-
-  read -r -p "Nombre del dominio (ej. reprobados.com): " dominio
-  dominio="${dominio// /}"
-
-  if [ -z "$dominio" ]; then
-    echo "[ERROR] Dominio vacío." >&2
-    return 1
-  fi
-
-  local zonefile="$ZONES_DIR/db.$dominio"
-
-  cat > "$zonefile" <<EOF
-\$TTL 86400
-@   IN  SOA ns1.$dominio. root.$dominio. (
-        $(serial_hoy) ; Serial
-        3600          ; Refresh
-        900           ; Retry
-        1209600       ; Expire
-        86400 )       ; Negative Cache TTL
-
-@    IN  NS  ns1.$dominio.
-@    IN  A   $IP_SUGERIDA
-ns1  IN  A   $IP_SUGERIDA
-www  IN  A   $IP_SUGERIDA
-EOF
-
-  if ! named-checkzone "$dominio" "$zonefile" >/dev/null 2>&1; then
-    echo "[ERROR] named-checkzone falló para $dominio" >&2
-    named-checkzone "$dominio" "$zonefile" || true
-    return 1
-  fi
-
-  asegurar_include_named_conf
-  actualizar_zonas_conf
-  aplicar_y_recargar
-
-  echo "[OK] Dominio $dominio creado apuntando a $IP_SUGERIDA"
-  return 0
-}
-
-eliminar_zona() {
-  read -r -p "Dominio a eliminar (ej. reprobados.com): " dom_del
-  dom_del="${dom_del// /}"
-
-  if [ -z "$dom_del" ]; then
-    echo "[ERROR] Dominio vacío." >&2
-    return 1
-  fi
-
-  rm -f "$ZONES_DIR/db.$dom_del"
-
-  asegurar_include_named_conf
-  actualizar_zonas_conf
-  aplicar_y_recargar
-
-  echo "[OK] Dominio eliminado: $dom_del"
-  return 0
-}
-
-enlistar() {
-  echo "--- Dominios activos (pro-zones) ---"
-  if ls "$ZONES_DIR"/db.* >/dev/null 2>&1; then
-    ls "$ZONES_DIR"/db.* | sed 's#.*/db\.##'
-  else
-    echo "(ninguno)"
-  fi
-}
-
-probar_resolucion() {
-  read -r -p "Dominio a consultar (ej. reprobados.com): " dom_con
-  dom_con="${dom_con// /}"
-  if [ -z "$dom_con" ]; then
-    echo "[ERROR] Dominio vacío." >&2
-    return 1
-  fi
-
-  echo
-  if cmd_exists dig; then
-    echo "[dig] @127.0.0.1 -> A $dom_con"
-    dig @"127.0.0.1" +short A "$dom_con" || true
-    echo
-    echo "[dig] @127.0.0.1 -> A www.$dom_con"
-    dig @"127.0.0.1" +short A "www.$dom_con" || true
-  else
-    echo "[i] 'dig' no está. Probando con nslookup..."
-    nslookup "$dom_con" 127.0.0.1 || true
-    nslookup "www.$dom_con" 127.0.0.1 || true
-  fi
-
-  return 0
-}
-
-monitoreo() {
-  echo "=== MONITOREO ==="
-  echo
-  echo "[Servicio]"
-  systemctl --no-pager -l status named | sed -n '1,20p' || true
-  echo
-  echo "[Puertos escuchando 53]"
-  if cmd_exists ss; then
-    ss -lntup | awk 'NR==1 || /:53 /' || true
-  else
-    netstat -lntup 2>/dev/null | awk 'NR==1 || /:53 /' || true
-  fi
-  echo
-  echo "[Config check]"
-  named-checkconf "$NAMED_CONF" && echo "[OK] named-checkconf sin errores"
-}
-
-main() {
-  require_root
-  install_bind_if_needed
-  enable_named
-  asegurar_include_named_conf
-  actualizar_zonas_conf
-  aplicar_y_recargar >/dev/null 2>&1 || true
-
-  while true; do
+mostrar_menu() {
     clear
-    echo "administrador dns "
-    echo "1. Enlistar Dominios"
-    echo "2. Agregar Dominio (incluye fijar IP)"
-    echo "3. Eliminar Dominio"
-    echo "4. Probar Resolución Local"
-    echo "5. Monitoreo"
-    echo "6. Salir"
-    read -r -p "Selecciona una opción: " opcion
-
-    case "${opcion:-}" in
-      1) enlistar; pause ;;
-      2) crear_zona; pause ;;
-      3) eliminar_zona; pause ;;
-      4) probar_resolucion; pause ;;
-      5) monitoreo; pause ;;
-      6) echo "Saliendo..."; exit 0 ;;
-      *) echo "Opción no válida."; sleep 1 ;;
-    esac
-  done
+    echo -e "${CYAN}===============================================${RESET}"
+    echo -e "${CYAN}       GESTOR DNS MAGEIA - SOLUCION PING       ${RESET}"
+    echo -e "${CYAN}===============================================${RESET}"
+    echo "1. Crear Dominio (EOF + Registro A)"
+    echo "2. Ver Dominios e IPs registradas"
+    echo "3. Eliminar Dominio y Limpiar"
+    echo "4. Probar con NSLOOKUP / HOST"
+    echo "5. Salir"
+    echo -e "${CYAN}===============================================${RESET}"
 }
 
-main "$@"
+# Configurar el sistema para que se consulte a si mismo
+# Esto arregla el error de "Nombre o servicio desconocido"
+echo "nameserver 127.0.0.1" > /etc/resolv.conf
+
+while true; do
+    mostrar_menu
+    read -p "Seleccione una opcion: " opc
+
+    case $opc in
+        1)
+            read -p "Nombre del dominio (ej. reprobados.com): " dominio
+            read -p "IP a la que apunta: " ip
+            
+            # Crear archivo de zona usando EOF (Here Document)
+            cat <<EOF > /var/lib/named/var/named/$dominio.zone
+\$TTL 86400
+@   IN  SOA     ns1.$dominio. admin.$dominio. (
+                2026022701 ; Serial
+                3600       ; Refresh
+                1800       ; Retry
+                604800     ; Expire
+                86400 )    ; Minimum
+    IN  NS      ns1.$dominio.
+ns1 IN  A       $ip
+@   IN  A       $ip
+www IN  A       $ip
+EOF
+            
+            # Agregar al archivo de configuracion (Include)
+            # Solo lo agrega si no existe ya en el archivo
+            if ! grep -q "$dominio" /etc/named.conf; then
+                echo "zone \"$dominio\" IN { type master; file \"$dominio.zone\"; };" >> /etc/named.conf
+            fi
+
+            # Permisos y Reinicio
+            chown named:named /var/lib/named/var/named/$dominio.zone
+            systemctl restart named
+            echo -e "${VERDE}[OK] Dominio $dominio creado y apuntando a $ip${RESET}"
+            read -p "Presione Enter..."
+            ;;
+
+        2)
+            echo -e "\n${AMARILLO}--- DOMINIOS EN /etc/named.conf ---${RESET}"
+            grep "zone" /etc/named.conf | grep -v "localhost" | cut -d'"' -f2
+            read -p "Presione Enter..."
+            ;;
+
+        3)
+            read -p "Dominio a eliminar: " dominio
+            # Borrar la zona del archivo de config (sed borra la linea que coincida)
+            sed -i "/zone \"$dominio\"/d" /etc/named.conf
+            # Borrar el archivo de zona físicamente
+            rm -f /var/lib/named/var/named/$dominio.zone
+            systemctl restart named
+            echo -e "${VERDE}[OK] Dominio eliminado.${RESET}"
+            read -p "Presione Enter..."
+            ;;
+
+        4)
+            read -p "Dominio a consultar: " test
+            host $test
+            read -p "Presione Enter..."
+            ;;
+
+        5)
+            echo "Saliendo..."
+            break
+            ;;
+
+        *)
+            echo "Opcion no valida"
+            sleep 1
+            ;;
+    esac
+done
