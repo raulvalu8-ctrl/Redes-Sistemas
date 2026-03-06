@@ -14,6 +14,11 @@ preparar_entorno() {
     sudo shorewall clear > /dev/null 2>&1
     sudo systemctl stop shorewall > /dev/null 2>&1
     
+    # Asegurar que /sbin/nologin sea un shell válido para que vsftpd no lo rechace
+    if ! grep -q "/sbin/nologin" /etc/shells; then
+        echo "/sbin/nologin" | sudo tee -a /etc/shells > /dev/null
+    fi
+
     # Crear directorio para chroot seguro si no existe
     sudo mkdir -p /var/run/vsftpd/empty
     sudo chmod 755 /var/run/vsftpd/empty
@@ -36,6 +41,8 @@ secure_chroot_dir=/var/run/vsftpd/empty
 pam_service_name=vsftpd
 ssl_enable=NO
 anonymous_enable=NO
+# Evita errores de shell si el usuario usa /sbin/nologin
+check_shell=NO
 # Desactivamos listen_ipv6 si listen=YES para evitar conflictos
 listen_ipv6=NO
 EOF'
