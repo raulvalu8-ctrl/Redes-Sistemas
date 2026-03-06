@@ -10,11 +10,15 @@ RESET='\033[0m'
 # --- CONFIGURACIÓN AUTOMÁTICA AL INICIAR ---
 # Esto asegura que el Firewall no estorbe y que el .conf esté bien
 preparar_entorno() {
-    echo -e "${AMARILLO}Abriendo Firewall (Shorewall) y configurando vsftpd...${RESET}"
+    echo -e "${AMARILLO}Configurando entorno para vsftpd...${RESET}"
     sudo shorewall clear > /dev/null 2>&1
     sudo systemctl stop shorewall > /dev/null 2>&1
     
-    # Configuración maestra para evitar errores en FileZilla
+    # Crear directorio para chroot seguro si no existe
+    sudo mkdir -p /var/run/vsftpd/empty
+    sudo chmod 755 /var/run/vsftpd/empty
+    
+    # Configuración maestra optimizada para FileZilla y Mageia
     sudo bash -c 'cat <<EOF > /etc/vsftpd/vsftpd.conf
 listen=YES
 local_enable=YES
@@ -32,7 +36,7 @@ secure_chroot_dir=/var/run/vsftpd/empty
 pam_service_name=vsftpd
 ssl_enable=NO
 anonymous_enable=NO
-utf8_filesystem=YES
+# Desactivamos listen_ipv6 si listen=YES para evitar conflictos
 listen_ipv6=NO
 EOF'
     sudo systemctl restart vsftpd
