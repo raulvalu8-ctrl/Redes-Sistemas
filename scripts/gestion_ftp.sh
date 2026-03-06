@@ -145,6 +145,53 @@ crear_grupo() {
     read -p "Presiona Enter..."
 }
 
+# --- 4. FUNCIÓN PERMITIR CAMBIO DE GRUPO ---
+cambiar_grupo_usuario() {
+    read -p "Usuario a modificar: " user
+    if ! id "$user" &>/dev/null; then
+        echo -e "${ROJO}El usuario $user no existe.${RESET}"
+        read -p "Presiona Enter..."
+        return
+    fi
+
+    # Obtener el grupo actual del usuario
+    grupo_actual=$(id -gn "$user")
+    echo -e "${AMARILLO}Usuario: $user | Grupo actual: $grupo_actual${RESET}"
+    
+    read -p "Nuevo grupo para $user: " nuevo_grupo
+    
+    # Verificar si el nuevo grupo existe
+    if ! grep -q "^$nuevo_grupo:" /etc/group; then
+        echo -e "${AMARILLO}El grupo $nuevo_grupo no existe. ¿Deseas crearlo? (s/n): ${RESET}"
+        read -p "" crear
+        if [[ "$crear" == "s" ]]; then
+            groupadd "$nuevo_grupo"
+            mkdir -p "/var/ftp/grupos/$nuevo_grupo"
+            chmod 770 "/var/ftp/grupos/$nuevo_grupo"
+        else
+            return
+        fi
+    fi
+
+    # 1. Desmontar grupo antiguo
+    echo -e "${AMARILLO}Desmontando carpeta del grupo antiguo ($grupo_actual)...${RESET}"
+    umount -l "/home/$user/ftp/$grupo_actual" 2>/dev/null
+    rm -rf "/home/$user/ftp/$grupo_actual"
+
+    # 2. Cambiar grupo principal en el sistema
+    usermod -g "$nuevo_grupo" "$user"
+
+    # 3. Crear nueva carpeta y cargar montaje
+    mkdir -p "/home/$user/ftp/$nuevo_grupo"
+    mount --bind "/var/ftp/grupos/$nuevo_grupo" "/home/$user/ftp/$nuevo_grupo"
+
+    # 4. Ajustar permisos
+    chown -R "$user:$nuevo_grupo" "/home/$user"
+    
+    echo -e "${VERDE}El usuario $user ha sido movido al grupo $nuevo_grupo exitosamente.${RESET}"
+    read -p "Presiona Enter..."
+}
+
 # --- EJECUCIÓN INICIAL ---
 preparar_entorno
 
@@ -159,9 +206,10 @@ while true; do
     echo "3) Eliminar Usuario"
     echo "4) Crear Grupo"
     echo "5) Eliminar Grupo"
-    echo -e "6) ${VERDE}VER USUARIOS Y GRUPOS${RESET}"
-    echo "7) Reiniciar Servicio (vsftpd)"
-    echo "8) Salir"
+    echo "6) Cambiar Usuario de Grupo"
+    echo -e "7) ${VERDE}VER USUARIOS Y GRUPOS${RESET}"
+    echo "8) Reiniciar Servicio (vsftpd)"
+    echo "9) Salir"
     echo -e "${CYAN}==========================================${RESET}"
     read -p "Selecciona una opción: " opt
 
@@ -171,9 +219,10 @@ while true; do
         3) eliminar_usuario ;;
         4) crear_grupo ;;
         5) eliminar_grupo ;;
-        6) ver_usuarios_grupos ;;
-        7) systemctl restart vsftpd && echo "Servicio Reiniciado" && sleep 2 ;;
-        8) exit 0 ;;
+        6) cambiar_grupo_usuario ;;
+        7) ver_usuarios_grupos ;;
+        8) systemctl restart vsftpd && echo "Servicio Reiniciado" && sleep 2 ;;
+        9) exit 0 ;;
         *) echo "Opción no válida" && sleep 1 ;;
     esac
 done
