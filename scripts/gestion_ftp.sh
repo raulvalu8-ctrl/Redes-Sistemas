@@ -15,7 +15,7 @@ preparar_entorno() {
     sudo systemctl stop shorewall > /dev/null 2>&1
     
     # Configuración maestra para evitar errores en FileZilla
-    sudo bash -c 'cat <<EOF > /etc/vsftpd.conf
+    sudo bash -c 'cat <<EOF > /etc/vsftpd/vsftpd.conf
 listen=YES
 local_enable=YES
 write_enable=YES
@@ -31,6 +31,9 @@ pasv_max_port=10100
 secure_chroot_dir=/var/run/vsftpd/empty
 pam_service_name=vsftpd
 ssl_enable=NO
+anonymous_enable=NO
+utf8_filesystem=YES
+listen_ipv6=NO
 EOF'
     sudo systemctl restart vsftpd
 }
@@ -105,10 +108,29 @@ eliminar_usuario() {
 }
 
 eliminar_grupo() {
-    read -p "Grupo a eliminar: " grupo
-    groupdel "$grupo"
+    read -p "Nombre del grupo a eliminar: " grupo
+    # Desmontar carpetas de usuarios que pertenezcan a este grupo (si existen)
+    echo -e "${AMARILLO}Buscando usuarios del grupo $grupo para desmontar directorios...${RESET}"
+    for user in $(grep ":$grupo$" /etc/group | cut -d: -f4 | tr ',' ' '); do
+        umount -l "/home/$user/ftp/$grupo" 2>/dev/null
+    done
+    
+    groupdel "$grupo" 2>/dev/null
     rm -rf "/var/ftp/grupos/$grupo"
     echo -e "${ROJO}Grupo $grupo borrado.${RESET}"
+    read -p "Presiona Enter..."
+}
+
+crear_grupo() {
+    read -p "Nombre del nuevo grupo: " grupo
+    if grep -q "^$grupo:" /etc/group; then
+        echo -e "${ROJO}El grupo $grupo ya existe.${RESET}"
+    else
+        groupadd "$grupo"
+        mkdir -p "/var/ftp/grupos/$grupo"
+        chmod 770 "/var/ftp/grupos/$grupo"
+        echo -e "${VERDE}Grupo $grupo creado en /var/ftp/grupos/$grupo${RESET}"
+    fi
     read -p "Presiona Enter..."
 }
 
