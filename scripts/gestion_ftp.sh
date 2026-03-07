@@ -74,7 +74,7 @@ verificar_y_instalar() {
 crear_usuario() {
     read -p "Nombre del usuario: " user
     read -p "Escribe la contraseña (VISIBLE): " pass
-    read -p "Grupo: " grupo
+    grupo="reprobados"
     
     # Crear la carpeta base si no existe para evitar el error de "dispositivo especial"
     sudo mkdir -p "/var/ftp/publica"
@@ -93,7 +93,7 @@ crear_usuario() {
     
     # Carpeta personal y limpieza
     sudo chown -R "$user:$grupo" "$U_FTP"
-    sudo chmod 700 "$U_FTP/usuario"
+    sudo chmod 755 "$U_FTP/usuario"
     
     # Eliminar carpetas que no queremos (tmp y cualquier otra de /etc/skel)
     sudo rm -rf "$U_FTP/tmp"
@@ -199,7 +199,7 @@ cambiar_grupo_usuario() {
 
     # 5. Ajustar permisos
     sudo chown -R "$user:$nuevo_grupo" "/home/$user"
-    sudo chmod 700 "/home/$user/usuario"
+    sudo chmod 755 "/home/$user/usuario"
     
     # 6. Limpiar carpetas no deseadas
     sudo rm -rf "/home/$user/tmp"

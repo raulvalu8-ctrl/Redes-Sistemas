@@ -108,9 +108,7 @@ function Add-FTP-User {
     $user = Read-Host "Nombre del nuevo usuario"
     $passText = Read-Host "Contrasena (Puede ser simple)"
     $pass = ConvertTo-SecureString $passText -AsPlainText -Force
-    Write-Host "Asignar Grupo: 1) $GROUP_A  2) $GROUP_B"
-    $opt = Read-Host "Eleccion"
-    $group = if ($opt -eq "2") { $GROUP_B } else { $GROUP_A }
+    $group = $GROUP_A
 
     if (-not (Get-LocalUser -Name $user -ErrorAction SilentlyContinue)) {
         try {
@@ -124,6 +122,9 @@ function Add-FTP-User {
             
             # Carpeta Personal (Local al home del usuario)
             New-Item -ItemType Directory -Path "$homePath\usuario" -Force | Out-Null
+            
+            # Otorgar permisos de modificacion al usuario en su carpeta
+            icacls "$homePath\usuario" /grant "${user}:(OI)(CI)M" | Out-Null
 
             # Junctions (Mklink) para carpetas compartidas
             cmd /c "mklink /J ""$homePath\publica"" ""$PUBLIC_DIR""" | Out-Null
