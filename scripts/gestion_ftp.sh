@@ -46,6 +46,7 @@ check_shell=NO
 # Desactivamos listen_ipv6 si listen=YES para evitar conflictos
 listen_ipv6=NO
 EOF'
+    sudo rm -rf /home/*/tmp 2>/dev/null
     sudo systemctl restart vsftpd
 }
 
@@ -83,21 +84,21 @@ crear_usuario() {
     sudo useradd -m -g "$grupo" -s /sbin/nologin "$user"
     printf "%s:%s" "$user" "$pass" | sudo chpasswd
     
-    U_FTP="/home/$user/ftp"
+    U_FTP="/home/$user"
     sudo mkdir -p "$U_FTP/publica" "$U_FTP/$grupo" "$U_FTP/usuario"
     
     # Montajes
     sudo mount --bind /var/ftp/publica "$U_FTP/publica"
     sudo mount --bind "/var/ftp/grupos/$grupo" "$U_FTP/$grupo"
     
-    # Carpeta personal (no es montaje, es local al usuario en /home)
-    sudo chown -R "$user:$grupo" "/home/$user"
+    # Carpeta personal y limpieza
+    sudo chown -R "$user:$grupo" "$U_FTP"
     sudo chmod 700 "$U_FTP/usuario"
     
-    # Limpiar carpetas no deseadas (como tmp que a veces crea el sistema)
-    sudo rm -rf "/home/$user/tmp"
+    # Eliminar carpetas que no queremos (tmp y cualquier otra de /etc/skel)
+    sudo rm -rf "$U_FTP/tmp"
     
-    echo -e "${VERDE}Usuario $user creado. Carpetas: publica, $grupo y usuario (personal).${RESET}"
+    echo -e "${VERDE}Usuario $user creado. Carpetas: publica, $grupo y usuario (personal) están en la raíz del FTP.${RESET}"
     read -p "Presiona Enter..."
 }
 
@@ -118,8 +119,8 @@ ver_usuarios_grupos() {
 
 eliminar_usuario() {
     read -p "Usuario a eliminar: " user
-    sudo umount -l "/home/$user/ftp/publica" 2>/dev/null
-    sudo umount -l "/home/$user/ftp/"* 2>/dev/null
+    sudo umount -l "/home/$user/publica" 2>/dev/null
+    sudo umount -l "/home/$user/"* 2>/dev/null
     sudo userdel -r "$user"
     echo -e "${ROJO}Usuario $user borrado.${RESET}"
     read -p "Presiona Enter..."
@@ -130,7 +131,7 @@ eliminar_grupo() {
     # Desmontar carpetas de usuarios que pertenezcan a este grupo (si existen)
     echo -e "${AMARILLO}Buscando usuarios del grupo $grupo para desmontar directorios...${RESET}"
     for user in $(grep ":$grupo$" /etc/group | cut -d: -f4 | tr ',' ' '); do
-        sudo umount -l "/home/$user/ftp/$grupo" 2>/dev/null
+        sudo umount -l "/home/$user/$grupo" 2>/dev/null
     done
     
     sudo groupdel "$grupo" 2>/dev/null
@@ -182,23 +183,23 @@ cambiar_grupo_usuario() {
 
     # 1. Desmontar grupo antiguo
     echo -e "${AMARILLO}Desmontando carpeta del grupo antiguo ($grupo_actual)...${RESET}"
-    sudo umount -l "/home/$user/ftp/$grupo_actual" 2>/dev/null
-    sudo rm -rf "/home/$user/ftp/$grupo_actual"
+    sudo umount -l "/home/$user/$grupo_actual" 2>/dev/null
+    sudo rm -rf "/home/$user/$grupo_actual"
 
     # 2. Cambiar grupo principal en el sistema
     sudo usermod -g "$nuevo_grupo" "$user"
 
     # 3. Crear nueva carpeta y cargar montaje
-    sudo mkdir -p "/home/$user/ftp/$nuevo_grupo"
-    sudo mount --bind "/var/ftp/grupos/$nuevo_grupo" "/home/$user/ftp/$nuevo_grupo"
+    sudo mkdir -p "/home/$user/$nuevo_grupo"
+    sudo mount --bind "/var/ftp/grupos/$nuevo_grupo" "/home/$user/$nuevo_grupo"
 
     # 4. Asegurar que las carpetas fija (publica, usuario) existen por si acaso
-    sudo mkdir -p "/home/$user/ftp/publica" "/home/$user/ftp/usuario"
-    sudo mount --bind /var/ftp/publica "/home/$user/ftp/publica" 2>/dev/null
+    sudo mkdir -p "/home/$user/publica" "/home/$user/usuario"
+    sudo mount --bind /var/ftp/publica "/home/$user/publica" 2>/dev/null
 
     # 5. Ajustar permisos
     sudo chown -R "$user:$nuevo_grupo" "/home/$user"
-    sudo chmod 700 "/home/$user/ftp/usuario"
+    sudo chmod 700 "/home/$user/usuario"
     
     # 6. Limpiar carpetas no deseadas
     sudo rm -rf "/home/$user/tmp"
