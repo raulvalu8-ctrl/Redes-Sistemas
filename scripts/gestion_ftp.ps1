@@ -93,10 +93,12 @@ function Configure-FTP-Site {
     # Configuracion nativa via IIS (Sin Acentos en Strings):
     Set-WebConfigurationProperty -Filter "/system.applicationHost/sites/site[@name='$SiteName']/ftpServer/userIsolation" -Name "mode" -Value "IsolateAllDirectories"
     Set-WebConfigurationProperty -Filter "/system.applicationHost/sites/site[@name='$SiteName']/ftpServer/security/authentication/basicAuthentication" -Name "enabled" -Value $true
-    Set-WebConfigurationProperty -Filter "/system.applicationHost/sites/site[@name='$SiteName']/ftpServer/security/authentication/anonymousAuthentication" -Name "enabled" -Value $false
+    Set-WebConfigurationProperty -Filter "/system.applicationHost/sites/site[@name='$SiteName']/ftpServer/security/authentication/anonymousAuthentication" -Name "enabled" -Value $true
     Set-WebConfigurationProperty -Filter "/system.applicationHost/sites/site[@name='$SiteName']/ftpServer/security/ssl" -Name "controlChannelPolicy" -Value "SslAllow"
     Set-WebConfigurationProperty -Filter "/system.applicationHost/sites/site[@name='$SiteName']/ftpServer/security/ssl" -Name "dataChannelPolicy" -Value "SslAllow"
     
+    # Autorizacion para usuarios anonimos (?) y autenticados (*)
+    Add-WebConfiguration -Filter "/system.ftpServer/security/authorization" -PSPath "IIS:\" -Location $SiteName -Value @{accessType="Allow"; users="?"; permissions="Read"}
     Add-WebConfiguration -Filter "/system.ftpServer/security/authorization" -PSPath "IIS:\" -Location $SiteName -Value @{accessType="Allow"; users="*"; permissions="Read, Write"}
     
     Restart-Service ftpsvc

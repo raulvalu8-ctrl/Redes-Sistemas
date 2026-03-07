@@ -39,12 +39,11 @@ pasv_min_port=10000
 pasv_max_port=10100
 secure_chroot_dir=/var/run/vsftpd/empty
 pam_service_name=vsftpd
-ssl_enable=NO
-anonymous_enable=NO
-# Evita errores de shell si el usuario usa /sbin/nologin
-check_shell=NO
-# Desactivamos listen_ipv6 si listen=YES para evitar conflictos
 listen_ipv6=NO
+# Configuración para acceso anónimo (Default)
+anonymous_enable=YES
+no_anon_password=YES
+anon_root=/var/ftp/publica
 EOF'
     sudo rm -rf /home/*/tmp 2>/dev/null
     sudo systemctl restart vsftpd
