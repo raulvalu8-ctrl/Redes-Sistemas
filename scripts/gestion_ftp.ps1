@@ -7,7 +7,7 @@
 $BASE_PATH   = "C:\inetpub\ftp"
 $GROUPS_DIR  = "$BASE_PATH\grupos"
 $USERS_HOME  = "$BASE_PATH\$env:COMPUTERNAME"
-$PERSONAL_DIR = "$BASE_PATH\personal"
+$PUBLIC_DIR   = "$BASE_PATH\publica"
 
 $GROUP_A    = "reprobados"
 $GROUP_B    = "recursadores"
@@ -62,7 +62,7 @@ function Setup-IIS-FTP {
     
     # Estructura de Carpetas
     Log-Info "Generando estructura de directorios..."
-    $dirs = @($BASE_PATH, $GROUPS_DIR, $USERS_HOME, $PERSONAL_DIR, "$GROUPS_DIR\$GROUP_A", "$GROUPS_DIR\$GROUP_B")
+    $dirs = @($BASE_PATH, $GROUPS_DIR, $USERS_HOME, $PUBLIC_DIR, "$GROUPS_DIR\$GROUP_A", "$GROUPS_DIR\$GROUP_B")
     foreach ($d in $dirs) { if (-not (Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null } }
 
     # Grupos Locales
@@ -122,11 +122,14 @@ function Add-FTP-User {
             $homePath = "$USERS_HOME\$user"
             New-Item -ItemType Directory -Path $homePath -Force | Out-Null
             
-            # Junctions (Mklink)
-            cmd /c "mklink /J ""$homePath\publica"" ""$BASE_PATH\publica""" | Out-Null
+            # Carpeta Personal (Local al home del usuario)
+            New-Item -ItemType Directory -Path "$homePath\usuario" -Force | Out-Null
+
+            # Junctions (Mklink) para carpetas compartidas
+            cmd /c "mklink /J ""$homePath\publica"" ""$PUBLIC_DIR""" | Out-Null
             cmd /c "mklink /J ""$homePath\$group"" ""$GROUPS_DIR\$group""" | Out-Null
             
-            Log-Info "Usuario '$user' configurado."
+            Log-Info "Usuario '$user' configurado con carpetas: publica, $group y usuario."
         } catch {
             Log-Error "Error al crear el usuario. Revisa si las politicas se aplicaron correctamente."
         }
@@ -173,6 +176,10 @@ function Change-User-Group {
     $hPath = "$USERS_HOME\$user"
     if (Test-Path "$hPath\$cGroup") { cmd /c "rmdir ""$hPath\$cGroup""" }
     cmd /c "mklink /J ""$hPath\$nGroup"" ""$GROUPS_DIR\$nGroup""" | Out-Null
+
+    # Asegurar que las carpetas base existen
+    if (-not (Test-Path "$hPath\usuario")) { New-Item -ItemType Directory -Path "$hPath\usuario" -Force | Out-Null }
+    if (-not (Test-Path "$hPath\publica")) { cmd /c "mklink /J ""$hPath\publica"" ""$PUBLIC_DIR""" | Out-Null }
 
     Log-Info "Migracion de '$user' a '$nGroup' exitosa."
 }

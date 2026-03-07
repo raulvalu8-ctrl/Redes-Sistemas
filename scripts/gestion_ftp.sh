@@ -76,7 +76,7 @@ crear_usuario() {
     read -p "Grupo: " grupo
     
     # Crear la carpeta base si no existe para evitar el error de "dispositivo especial"
-    mkdir -p "/var/ftp/general"
+    mkdir -p "/var/ftp/publica"
     mkdir -p "/var/ftp/grupos/$grupo"
     
     groupadd "$grupo" 2>/dev/null
@@ -84,14 +84,17 @@ crear_usuario() {
     echo "$user:$pass" | chpasswd
     
     U_FTP="/home/$user/ftp"
-    mkdir -p "$U_FTP/general" "$U_FTP/$grupo"
+    mkdir -p "$U_FTP/publica" "$U_FTP/$grupo" "$U_FTP/usuario"
     
     # Montajes
-    mount --bind /var/ftp/general "$U_FTP/general"
+    mount --bind /var/ftp/publica "$U_FTP/publica"
     mount --bind "/var/ftp/grupos/$grupo" "$U_FTP/$grupo"
     
+    # Carpeta personal (no es montaje, es local al usuario en /home)
     chown -R "$user:$grupo" "/home/$user"
-    echo -e "${VERDE}Usuario $user creado y carpetas vinculadas.${RESET}"
+    chmod 700 "$U_FTP/usuario"
+    
+    echo -e "${VERDE}Usuario $user creado. Carpetas: publica, $grupo y usuario (personal).${RESET}"
     read -p "Presiona Enter..."
 }
 
@@ -112,6 +115,7 @@ ver_usuarios_grupos() {
 
 eliminar_usuario() {
     read -p "Usuario a eliminar: " user
+    umount -l "/home/$user/ftp/publica" 2>/dev/null
     umount -l "/home/$user/ftp/"* 2>/dev/null
     userdel -r "$user"
     echo -e "${ROJO}Usuario $user borrado.${RESET}"
@@ -185,8 +189,13 @@ cambiar_grupo_usuario() {
     mkdir -p "/home/$user/ftp/$nuevo_grupo"
     mount --bind "/var/ftp/grupos/$nuevo_grupo" "/home/$user/ftp/$nuevo_grupo"
 
-    # 4. Ajustar permisos
+    # 4. Asegurar que las carpetas fija (publica, usuario) existen por si acaso
+    mkdir -p "/home/$user/ftp/publica" "/home/$user/ftp/usuario"
+    mount --bind /var/ftp/publica "/home/$user/ftp/publica" 2>/dev/null
+
+    # 5. Ajustar permisos
     chown -R "$user:$nuevo_grupo" "/home/$user"
+    chmod 700 "/home/$user/ftp/usuario"
     
     echo -e "${VERDE}El usuario $user ha sido movido al grupo $nuevo_grupo exitosamente.${RESET}"
     read -p "Presiona Enter..."
