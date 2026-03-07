@@ -57,14 +57,14 @@ verificar_y_instalar() {
     else
         echo -e "${AMARILLO}[NO ENCONTRADO]: vsftpd no está instalado.${RESET}"
         echo "Instalando vsftpd ahora..."
-        urpmi vsftpd --auto
+        sudo urpmi vsftpd --auto
     fi
     
     if systemctl is-active --quiet vsftpd; then
         echo -e "${VERDE}[ESTADO]: El servicio vsftpd está ACTIVO.${RESET}"
     else
         echo -e "${ROJO}[ESTADO]: El servicio está INACTIVO. Iniciando...${RESET}"
-        systemctl start vsftpd
+        sudo systemctl start vsftpd
     fi
     read -p "Presiona Enter para volver..."
 }
@@ -76,23 +76,23 @@ crear_usuario() {
     read -p "Grupo: " grupo
     
     # Crear la carpeta base si no existe para evitar el error de "dispositivo especial"
-    mkdir -p "/var/ftp/publica"
-    mkdir -p "/var/ftp/grupos/$grupo"
+    sudo mkdir -p "/var/ftp/publica"
+    sudo mkdir -p "/var/ftp/grupos/$grupo"
     
-    groupadd "$grupo" 2>/dev/null
-    useradd -m -g "$grupo" -s /sbin/nologin "$user"
-    echo "$user:$pass" | chpasswd
+    sudo groupadd "$grupo" 2>/dev/null
+    sudo useradd -m -g "$grupo" -s /sbin/nologin "$user"
+    printf "%s:%s" "$user" "$pass" | sudo chpasswd
     
     U_FTP="/home/$user/ftp"
-    mkdir -p "$U_FTP/publica" "$U_FTP/$grupo" "$U_FTP/usuario"
+    sudo mkdir -p "$U_FTP/publica" "$U_FTP/$grupo" "$U_FTP/usuario"
     
     # Montajes
-    mount --bind /var/ftp/publica "$U_FTP/publica"
-    mount --bind "/var/ftp/grupos/$grupo" "$U_FTP/$grupo"
+    sudo mount --bind /var/ftp/publica "$U_FTP/publica"
+    sudo mount --bind "/var/ftp/grupos/$grupo" "$U_FTP/$grupo"
     
     # Carpeta personal (no es montaje, es local al usuario en /home)
-    chown -R "$user:$grupo" "/home/$user"
-    chmod 700 "$U_FTP/usuario"
+    sudo chown -R "$user:$grupo" "/home/$user"
+    sudo chmod 700 "$U_FTP/usuario"
     
     echo -e "${VERDE}Usuario $user creado. Carpetas: publica, $grupo y usuario (personal).${RESET}"
     read -p "Presiona Enter..."
@@ -115,9 +115,9 @@ ver_usuarios_grupos() {
 
 eliminar_usuario() {
     read -p "Usuario a eliminar: " user
-    umount -l "/home/$user/ftp/publica" 2>/dev/null
-    umount -l "/home/$user/ftp/"* 2>/dev/null
-    userdel -r "$user"
+    sudo umount -l "/home/$user/ftp/publica" 2>/dev/null
+    sudo umount -l "/home/$user/ftp/"* 2>/dev/null
+    sudo userdel -r "$user"
     echo -e "${ROJO}Usuario $user borrado.${RESET}"
     read -p "Presiona Enter..."
 }
@@ -127,11 +127,11 @@ eliminar_grupo() {
     # Desmontar carpetas de usuarios que pertenezcan a este grupo (si existen)
     echo -e "${AMARILLO}Buscando usuarios del grupo $grupo para desmontar directorios...${RESET}"
     for user in $(grep ":$grupo$" /etc/group | cut -d: -f4 | tr ',' ' '); do
-        umount -l "/home/$user/ftp/$grupo" 2>/dev/null
+        sudo umount -l "/home/$user/ftp/$grupo" 2>/dev/null
     done
     
-    groupdel "$grupo" 2>/dev/null
-    rm -rf "/var/ftp/grupos/$grupo"
+    sudo groupdel "$grupo" 2>/dev/null
+    sudo rm -rf "/var/ftp/grupos/$grupo"
     echo -e "${ROJO}Grupo $grupo borrado.${RESET}"
     read -p "Presiona Enter..."
 }
@@ -141,9 +141,9 @@ crear_grupo() {
     if grep -q "^$grupo:" /etc/group; then
         echo -e "${ROJO}El grupo $grupo ya existe.${RESET}"
     else
-        groupadd "$grupo"
-        mkdir -p "/var/ftp/grupos/$grupo"
-        chmod 770 "/var/ftp/grupos/$grupo"
+        sudo groupadd "$grupo"
+        sudo mkdir -p "/var/ftp/grupos/$grupo"
+        sudo chmod 770 "/var/ftp/grupos/$grupo"
         echo -e "${VERDE}Grupo $grupo creado en /var/ftp/grupos/$grupo${RESET}"
     fi
     read -p "Presiona Enter..."
@@ -179,23 +179,23 @@ cambiar_grupo_usuario() {
 
     # 1. Desmontar grupo antiguo
     echo -e "${AMARILLO}Desmontando carpeta del grupo antiguo ($grupo_actual)...${RESET}"
-    umount -l "/home/$user/ftp/$grupo_actual" 2>/dev/null
-    rm -rf "/home/$user/ftp/$grupo_actual"
+    sudo umount -l "/home/$user/ftp/$grupo_actual" 2>/dev/null
+    sudo rm -rf "/home/$user/ftp/$grupo_actual"
 
     # 2. Cambiar grupo principal en el sistema
-    usermod -g "$nuevo_grupo" "$user"
+    sudo usermod -g "$nuevo_grupo" "$user"
 
     # 3. Crear nueva carpeta y cargar montaje
-    mkdir -p "/home/$user/ftp/$nuevo_grupo"
-    mount --bind "/var/ftp/grupos/$nuevo_grupo" "/home/$user/ftp/$nuevo_grupo"
+    sudo mkdir -p "/home/$user/ftp/$nuevo_grupo"
+    sudo mount --bind "/var/ftp/grupos/$nuevo_grupo" "/home/$user/ftp/$nuevo_grupo"
 
     # 4. Asegurar que las carpetas fija (publica, usuario) existen por si acaso
-    mkdir -p "/home/$user/ftp/publica" "/home/$user/ftp/usuario"
-    mount --bind /var/ftp/publica "/home/$user/ftp/publica" 2>/dev/null
+    sudo mkdir -p "/home/$user/ftp/publica" "/home/$user/ftp/usuario"
+    sudo mount --bind /var/ftp/publica "/home/$user/ftp/publica" 2>/dev/null
 
     # 5. Ajustar permisos
-    chown -R "$user:$nuevo_grupo" "/home/$user"
-    chmod 700 "/home/$user/ftp/usuario"
+    sudo chown -R "$user:$nuevo_grupo" "/home/$user"
+    sudo chmod 700 "/home/$user/ftp/usuario"
     
     echo -e "${VERDE}El usuario $user ha sido movido al grupo $nuevo_grupo exitosamente.${RESET}"
     read -p "Presiona Enter..."
