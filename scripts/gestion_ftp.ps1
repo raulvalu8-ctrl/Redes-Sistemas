@@ -129,6 +129,9 @@ function Add-FTP-User {
             cmd /c "mklink /J ""$homePath\publica"" ""$PUBLIC_DIR""" | Out-Null
             cmd /c "mklink /J ""$homePath\$group"" ""$GROUPS_DIR\$group""" | Out-Null
             
+            # Limpiar carpeta tmp si existe
+            if (Test-Path "$homePath\tmp") { Remove-Item "$homePath\tmp" -Recurse -Force }
+
             Log-Info "Usuario '$user' configurado con carpetas: publica, $group y usuario."
         } catch {
             Log-Error "Error al crear el usuario. Revisa si las politicas se aplicaron correctamente."
@@ -180,6 +183,9 @@ function Change-User-Group {
     # Asegurar que las carpetas base existen
     if (-not (Test-Path "$hPath\usuario")) { New-Item -ItemType Directory -Path "$hPath\usuario" -Force | Out-Null }
     if (-not (Test-Path "$hPath\publica")) { cmd /c "mklink /J ""$hPath\publica"" ""$PUBLIC_DIR""" | Out-Null }
+
+    # Limpiar carpeta tmp si existe
+    if (Test-Path "$hPath\tmp") { Remove-Item "$hPath\tmp" -Recurse -Force }
 
     Log-Info "Migracion de '$user' a '$nGroup' exitosa."
 }

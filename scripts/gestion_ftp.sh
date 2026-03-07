@@ -94,6 +94,9 @@ crear_usuario() {
     sudo chown -R "$user:$grupo" "/home/$user"
     sudo chmod 700 "$U_FTP/usuario"
     
+    # Limpiar carpetas no deseadas (como tmp que a veces crea el sistema)
+    sudo rm -rf "/home/$user/tmp"
+    
     echo -e "${VERDE}Usuario $user creado. Carpetas: publica, $grupo y usuario (personal).${RESET}"
     read -p "Presiona Enter..."
 }
@@ -196,6 +199,9 @@ cambiar_grupo_usuario() {
     # 5. Ajustar permisos
     sudo chown -R "$user:$nuevo_grupo" "/home/$user"
     sudo chmod 700 "/home/$user/ftp/usuario"
+    
+    # 6. Limpiar carpetas no deseadas
+    sudo rm -rf "/home/$user/tmp"
     
     echo -e "${VERDE}El usuario $user ha sido movido al grupo $nuevo_grupo exitosamente.${RESET}"
     read -p "Presiona Enter..."
