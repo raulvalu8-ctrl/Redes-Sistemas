@@ -108,11 +108,11 @@ function Add-FTP-User {
     cmd /c "mklink /J ""$j1"" ""$PUBLIC_DIR""" | Out-Null
     
     $cGroup = if (Get-LocalGroupMember -Group $GROUP_B | Where-Object { $_.Name -like "*\$user" }) { $GROUP_B } else { $GROUP_A }
-    $j2 = "$p\grupo"; cmd /c "if exist ""$j2"" rmdir ""$j2"""
+    $j2 = "$p\$cGroup"; cmd /c "if exist ""$j2"" rmdir ""$j2"""
     cmd /c "mklink /J ""$j2"" ""$GROUPS_DIR\$cGroup""" | Out-Null
 
     # LIMPIEZA ESTRICTA: Solo las 3 carpetas que el usuario debe ver
-    Get-ChildItem $p | Where-Object { $_.Name -notin "publica", "grupo", "user" } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    Get-ChildItem $p | Where-Object { $_.Name -notin "publica", $cGroup, "user" } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
     Restart-Service ftpsvc -Force
     Log-Info "Usuario '$user' blindado con vista de 3 carpetas (publica, grupo, user)."
@@ -136,6 +136,14 @@ function Change-User-Group {
         Remove-LocalGroupMember -Group $GROUP_B -Member $user -ErrorAction SilentlyContinue
         Add-LocalGroupMember -Group $nGroup -Member $user
         
+        # Eliminar carpeta del grupo antiguo si existe para evitar duplicidad visual
+        $oldJ = "$USERS_HOME\$user\grupo"
+        if (Test-Path $oldJ) { Remove-Item $oldJ -Force }
+        $oldJ_A = "$USERS_HOME\$user\$GROUP_A"
+        if (Test-Path $oldJ_A -and ($nGroup -ne $GROUP_A)) { Remove-Item $oldJ_A -Force }
+        $oldJ_B = "$USERS_HOME\$user\$GROUP_B"
+        if (Test-Path $oldJ_B -and ($nGroup -ne $GROUP_B)) { Remove-Item $oldJ_B -Force }
+
         Add-FTP-User -userIn $user
         Log-Info "Migracion completada."
     }
