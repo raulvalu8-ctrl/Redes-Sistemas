@@ -14,15 +14,40 @@ preparar_entorno() {
     sudo shorewall clear > /dev/null 2>&1
     sudo systemctl stop shorewall > /dev/null 2>&1
     
-    # Asegurar que /sbin/nologin sea un shell válido para que vsftpd no lo rechace
-    if ! grep -q "/sbin/nologin" /etc/shells; then
-        echo "/sbin/nologin" | sudo tee -a /etc/shells > /dev/null
-    fi
+    # Asegurar que los shells sean válidos para que vsftpd no rechace el login
+    for shell in "/sbin/nologin" "/bin/false"; do
+        if ! grep -q "$shell" /etc/shells; then
+            echo "$shell" | sudo tee -a /etc/shells > /dev/null
+        fi
+    done
 
     # Crear directorio para chroot seguro si no existe
     sudo mkdir -p /var/run/vsftpd/empty
     sudo chmod 755 /var/run/vsftpd/empty
     
+    # Asegurar que el usuario ftp exista, tenga el shell correcto y esté desbloqueado
+    if ! id "ftp" &>/dev/null; then
+        sudo useradd -r -d /var/ftp -s /bin/false ftp 2>/dev/null
+    else
+        # Forzar el home y el shell correctos si ya existe
+        sudo usermod -d /var/ftp -s /bin/false ftp 2>/dev/null
+    fi
+    sudo usermod -U ftp 2>/dev/null
+
+    # vsftpd es extremadamente estricto con el chroot: la raíz NO puede tener escritura.
+    # Debe ser propiedad de root:root y permisos 755.
+    # La carpeta 'publica' y 'grupos' deben ser gestionables
+    sudo mkdir -p /var/ftp/publica
+    sudo mkdir -p /var/ftp/grupos/reprobados
+    
+    sudo chown root:root /var/ftp
+    sudo chmod 755 /var/ftp
+    
+    # Permisos totales para que puedan crear carpetas y archivos dentro
+    sudo chmod 777 /var/ftp/publica
+    sudo chmod 777 /var/ftp/grupos
+    sudo chmod 777 /var/ftp/grupos/reprobados
+
     # Configuración maestra optimizada para FileZilla y Mageia
     sudo bash -c 'cat <<EOF > /etc/vsftpd/vsftpd.conf
 listen=YES
@@ -40,11 +65,24 @@ pasv_max_port=10100
 secure_chroot_dir=/var/run/vsftpd/empty
 pam_service_name=vsftpd
 listen_ipv6=NO
-# Configuración para acceso anónimo (Default)
+ssl_enable=NO
+check_shell=NO
+
+# Acceso Anónimo (Default)
 anonymous_enable=YES
 no_anon_password=YES
-anon_root=/var/ftp/publica
+anon_root=/var/ftp
+ftp_username=ftp
+anon_world_readable_only=NO
+anon_upload_enable=YES
+anon_mkdir_write_enable=YES
+anon_other_write_enable=YES
 EOF'
+    
+    # Limpiar posibles bloqueos de usuario ftp en listas de seguridad
+    [ -f /etc/vsftpd/user_list ] && sudo sed -i '/^ftp$/d' /etc/vsftpd/user_list
+    [ -f /etc/vsftpd/ftpusers ] && sudo sed -i '/^ftp$/d' /etc/vsftpd/ftpusers
+
     sudo rm -rf /home/*/tmp 2>/dev/null
     sudo systemctl restart vsftpd
 }
@@ -90,14 +128,15 @@ crear_usuario() {
     sudo mount --bind /var/ftp/publica "$U_FTP/publica"
     sudo mount --bind "/var/ftp/grupos/$grupo" "$U_FTP/$grupo"
     
-    # Carpeta personal y limpieza
+    # Carpeta personal y permisos de gestión
     sudo chown -R "$user:$grupo" "$U_FTP"
-    sudo chmod 755 "$U_FTP/usuario"
+    sudo chmod 775 "$U_FTP"
+    sudo chmod 775 "$U_FTP/usuario"
     
-    # Eliminar carpetas que no queremos (tmp y cualquier otra de /etc/skel)
-    sudo rm -rf "$U_FTP/tmp"
+    # Limpiar archivos ocultos y carpetas extra para vista de 3 carpetas unicamente
+    sudo find "$U_FTP" -maxdepth 1 -not -name "." -not -name "publica" -not -name "$grupo" -not -name "usuario" -exec rm -rf {} + 2>/dev/null
     
-    echo -e "${VERDE}Usuario $user creado. Carpetas: publica, $grupo y usuario (personal) están en la raíz del FTP.${RESET}"
+    echo -e "${VERDE}Usuario $user listo con sus 3 carpetas.${RESET}"
     read -p "Presiona Enter..."
 }
 

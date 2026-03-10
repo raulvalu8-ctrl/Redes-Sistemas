@@ -6,224 +6,150 @@
 # --- CONFIGURACION DE RUTAS ---
 $BASE_PATH   = "C:\inetpub\ftp"
 $GROUPS_DIR  = "$BASE_PATH\grupos"
-$USERS_HOME  = "$BASE_PATH\$env:COMPUTERNAME"
+$USERS_HOME  = "$BASE_PATH\LocalUser"
 $PUBLIC_DIR   = "$BASE_PATH\publica"
+$ANON_HOME   = "$USERS_HOME\Public"
 
 $GROUP_A    = "reprobados"
 $GROUP_B    = "recursadores"
 $GROUP_BASE = "ftp_users"
 
-# --- FUNCIONES DE LOGGING (SIN ACENTOS) ---
-function Log-Info { param($msg) Write-Host "[INFO] $msg" }
-function Log-Error { param($msg) Write-Host "[ERROR] $msg" }
+function Log-Info { param($msg) Write-Host "[+] $msg" -ForegroundColor Green }
+function Log-Error { param($msg) Write-Host "[-] $msg" -ForegroundColor Red }
+function Log-Warning { param($msg) Write-Host "[!] $msg" -ForegroundColor Yellow }
+function Log-Header { param($msg) Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 
-# --- VALIDACION DE PRIVILEGIOS ---
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Log-Host "Se requieren permisos de administrador."
-    exit 1
+    Log-Error "Se requieren privilegios de Administrador."; exit 1
 }
 
-# --- FUNCION: DESACTIVAR POLITICAS DE CONTRASENA ---
-function Desactivar-Politicas-Pass {
-    Log-Info "Desactivando requisitos de complejidad y longitud de contrasenas..."
-    $cfgFile = "$env:TEMP\sec.cfg"
-    $logFile = "$env:TEMP\sec.log"
-    
-    # Exportar politica actual
-    secedit /export /cfg $cfgFile /quiet
-    
-    # Modificar valores en el archivo temporal
-    (Get-Content $cfgFile) | ForEach-Object {
-        $_ -replace "PasswordComplexity = 1", "PasswordComplexity = 0" `
-           -replace "MinimumPasswordLength = .*", "MinimumPasswordLength = 0"
-    } | Set-Content $cfgFile
-    
-    # Importar y aplicar politica modificada
-    secedit /configure /db "$env:TEMP\sec.sdb" /cfg $cfgFile /areas SECURITYPOLICY /log $logFile /quiet
-    
-    # Forzar cambio mediante comando net
-    net accounts /minpwlen:0 /maxpwage:unlimited /minpwage:0 /force | Out-Null
-    
-    Log-Info "Politicas de seguridad relajadas correctamente."
-}
-
-# --- 1. INSTALACION Y RECURSOS ---
 function Setup-IIS-FTP {
-    Desactivar-Politicas-Pass
-    
-    Log-Info "Verificando componentes de IIS y FTP..."
-    $features = @("Web-Server", "Web-Ftp-Server", "Web-Ftp-Service", "Web-Mgmt-Console")
+    Log-Info "Preparando componentes y carpetas..."
+    $features = @("Web-Server", "Web-Ftp-Server", "Web-Ftp-Service")
     foreach ($f in $features) {
         if ((Get-WindowsFeature -Name $f).InstallState -ne "Installed") {
-            Log-Info "Instalando $f..."
-            Install-WindowsFeature -Name $f -IncludeManagementTools | Out-Null
+            Install-WindowsFeature -Name $f | Out-Null
         }
     }
     
-    # Estructura de Carpetas
-    Log-Info "Generando estructura de directorios..."
-    $dirs = @($BASE_PATH, $GROUPS_DIR, $USERS_HOME, $PUBLIC_DIR, "$GROUPS_DIR\$GROUP_A", "$GROUPS_DIR\$GROUP_B")
+    $dirs = @($BASE_PATH, $GROUPS_DIR, $USERS_HOME, $PUBLIC_DIR, $ANON_HOME)
     foreach ($d in $dirs) { if (-not (Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null } }
 
-    # Grupos Locales
-    Log-Info "Asegurando grupos de seguridad..."
+    # Junction para Anonimo
+    $j = "$ANON_HOME\publica"; cmd /c "if exist ""$j"" rmdir ""$j"""
+    cmd /c "mklink /J ""$j"" ""$PUBLIC_DIR""" | Out-Null
+
+    # Grupos
     foreach ($g in @($GROUP_A, $GROUP_B, $GROUP_BASE)) {
-        if (-not (Get-LocalGroup -Name $g -ErrorAction SilentlyContinue)) {
-            New-LocalGroup -Name $g | Out-Null
-        }
+        if (-not (Get-LocalGroup -Name $g -ErrorAction SilentlyContinue)) { New-LocalGroup -Name $g | Out-Null }
     }
 }
 
-# --- 2. CONFIGURACION DEL SITIO FTP ---
 function Configure-FTP-Site {
-    Import-Module WebAdministration
     $SiteName = "ServidorFTP"
-    Log-Info "Desplegando Sitio FTP '$SiteName'..."
+    Log-Header "Configurando Sitio FTP"
+    Import-Module WebAdministration
     
-    try {
-        if (Get-Website -Name $SiteName -ErrorAction SilentlyContinue) {
-            Remove-Website -Name $SiteName -ErrorAction SilentlyContinue
-        }
-    } catch {
-        Log-Error "Aviso: No se pudo limpiar el sitio previo, intentando continuar..."
-    }
-    
+    if (Get-Website -Name $SiteName -ErrorAction SilentlyContinue) { Remove-Website -Name $SiteName | Out-Null }
     New-WebFtpSite -Name $SiteName -PhysicalPath $BASE_PATH -Port 21 -Force | Out-Null
     
-    # Configuracion nativa via IIS (Sin Acentos en Strings):
-    Set-WebConfigurationProperty -Filter "/system.applicationHost/sites/site[@name='$SiteName']/ftpServer/userIsolation" -Name "mode" -Value "IsolateAllDirectories"
+    # AISLAMIENTO: StartInUsersDirectory (Modo 1 - LocalUser\<Usuario>)
+    Set-WebConfigurationProperty -Filter "/system.applicationHost/sites/site[@name='$SiteName']/ftpServer/userIsolation" -Name "mode" -Value "StartInUsersDirectory"
+    Set-WebConfigurationProperty -Filter "/system.applicationHost/sites/site[@name='$SiteName']/ftpServer/security/authentication/basicAuthentication" -Name "defaultLogonDomain" -Value "."
+    
     Set-WebConfigurationProperty -Filter "/system.applicationHost/sites/site[@name='$SiteName']/ftpServer/security/authentication/basicAuthentication" -Name "enabled" -Value $true
     Set-WebConfigurationProperty -Filter "/system.applicationHost/sites/site[@name='$SiteName']/ftpServer/security/authentication/anonymousAuthentication" -Name "enabled" -Value $true
+    
+    # SSL: Permitir pero no requerir (Para evitar error 534)
     Set-WebConfigurationProperty -Filter "/system.applicationHost/sites/site[@name='$SiteName']/ftpServer/security/ssl" -Name "controlChannelPolicy" -Value "SslAllow"
     Set-WebConfigurationProperty -Filter "/system.applicationHost/sites/site[@name='$SiteName']/ftpServer/security/ssl" -Name "dataChannelPolicy" -Value "SslAllow"
-    
-    # Autorizacion para usuarios anonimos (?) y autenticados (*)
-    Add-WebConfiguration -Filter "/system.ftpServer/security/authorization" -PSPath "IIS:\" -Location $SiteName -Value @{accessType="Allow"; users="?"; permissions="Read"}
+    Set-WebConfigurationProperty -Filter "/system.applicationHost/sites/site[@name='$SiteName']/ftpServer/security/ssl" -Name "serverCertificateRollbackContext" -Value $null
+    Clear-WebConfiguration -Filter "/system.ftpServer/security/authorization" -PSPath "IIS:\" -Location $SiteName
+    Add-WebConfiguration -Filter "/system.ftpServer/security/authorization" -PSPath "IIS:\" -Location $SiteName -Value @{accessType="Allow"; users="?"; permissions="Read, Write"}
     Add-WebConfiguration -Filter "/system.ftpServer/security/authorization" -PSPath "IIS:\" -Location $SiteName -Value @{accessType="Allow"; users="*"; permissions="Read, Write"}
     
-    Restart-Service ftpsvc
-    Log-Info "Sitio FTP listo en puerto 21."
+    # Permisos Globales para evitar el 530
+    icacls "$BASE_PATH" /grant "*S-1-1-0:(F)" /Q | Out-Null
+    icacls "$USERS_HOME" /grant "*S-1-1-0:(F)" /Q | Out-Null
+    
+    Restart-Service ftpsvc -Force
+    Log-Info "Sitio configurado y servicio FTP reiniciado."
 }
 
-# --- 3. GESTION DE USUARIOS ---
 function Add-FTP-User {
-    $user = Read-Host "Nombre del nuevo usuario"
-    $passText = Read-Host "Contrasena (Puede ser simple)"
-    $pass = ConvertTo-SecureString $passText -AsPlainText -Force
-    $group = $GROUP_A
-
+    param($userIn = $null)
+    Log-Header "Registrar/Reparar Usuario FTP"
+    
+    $user = if ($userIn) { $userIn } else { Read-Host "Nombre del usuario" }
+    
     if (-not (Get-LocalUser -Name $user -ErrorAction SilentlyContinue)) {
-        try {
-            New-LocalUser -Name $user -Password $pass -PasswordNeverExpires -ErrorAction Stop | Out-Null
-            
-            Add-LocalGroupMember -Group $GROUP_BASE -Member $user
-            Add-LocalGroupMember -Group $group -Member $user
-            
-            $homePath = "$USERS_HOME\$user"
-            New-Item -ItemType Directory -Path $homePath -Force | Out-Null
-            
-            # Carpeta Personal (Local al home del usuario)
-            New-Item -ItemType Directory -Path "$homePath\usuario" -Force | Out-Null
-            
-            # Otorgar permisos de modificacion al usuario en su carpeta
-            icacls "$homePath\usuario" /grant "${user}:(OI)(CI)M" | Out-Null
-
-            # Junctions (Mklink) para carpetas compartidas
-            cmd /c "mklink /J ""$homePath\publica"" ""$PUBLIC_DIR""" | Out-Null
-            cmd /c "mklink /J ""$homePath\$group"" ""$GROUPS_DIR\$group""" | Out-Null
-            
-            # Limpiar carpeta tmp si existe
-            if (Test-Path "$homePath\tmp") { Remove-Item "$homePath\tmp" -Recurse -Force }
-
-            Log-Info "Usuario '$user' configurado con carpetas: publica, $group y usuario."
-        } catch {
-            Log-Error "Error al crear el usuario. Revisa si las politicas se aplicaron correctamente."
-        }
-    } else {
-        Log-Error "Error: El usuario '$user' ya existe."
+        $passText = Read-Host "Contrasena para nuevo usuario"
+        $pass = ConvertTo-SecureString $passText -AsPlainText -Force
+        New-LocalUser -Name $user -Password $pass -PasswordNeverExpires | Out-Null
+        Add-LocalGroupMember -Group $GROUP_BASE -Member $user
+        Add-LocalGroupMember -Group $GROUP_A -Member $user
+        Log-Info "Usuario '$user' creado."
     }
+
+    $p = "$USERS_HOME\$user"
+    if (-not (Test-Path $p)) { New-Item -ItemType Directory $p -Force | Out-Null }
+    
+    # Permisos criticos del Home
+    icacls "$p" /inheritance:r | Out-Null
+    icacls "$p" /grant "${user}:(OI)(CI)F" /grant "*S-1-5-32-544:(OI)(CI)F" /grant "*S-1-5-18:(OI)(CI)F" | Out-Null
+
+    # Subcarpetas (publica, grupo, user)
+    if (-not (Test-Path "$p\user")) { New-Item -ItemType Directory "$p\user" -Force | Out-Null }
+    
+    $j1 = "$p\publica"; cmd /c "if exist ""$j1"" rmdir ""$j1"""
+    cmd /c "mklink /J ""$j1"" ""$PUBLIC_DIR""" | Out-Null
+    
+    $cGroup = if (Get-LocalGroupMember -Group $GROUP_B | Where-Object { $_.Name -like "*\$user" }) { $GROUP_B } else { $GROUP_A }
+    $j2 = "$p\grupo"; cmd /c "if exist ""$j2"" rmdir ""$j2"""
+    cmd /c "mklink /J ""$j2"" ""$GROUPS_DIR\$cGroup""" | Out-Null
+
+    # LIMPIEZA ESTRICTA: Solo las 3 carpetas que el usuario debe ver
+    Get-ChildItem $p | Where-Object { $_.Name -notin "publica", "grupo", "user" } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+    Restart-Service ftpsvc -Force
+    Log-Info "Usuario '$user' blindado con vista de 3 carpetas (publica, grupo, user)."
 }
 
 function Remove-FTP-User {
-    $user = Read-Host "Usuario a dar de baja"
+    $user = Read-Host "Usuario a eliminar"
     if (Get-LocalUser -Name $user -ErrorAction SilentlyContinue) {
-        $homePath = "$USERS_HOME\$user"
-        if (Test-Path $homePath) { Remove-Item $homePath -Recurse -Force }
-        Remove-LocalUser -Name $user
-        Log-Info "Baja de '$user' completada."
+        Remove-LocalUser -Name $user; Remove-Item "$USERS_HOME\$user" -Recurse -Force
+        Log-Info "Usuario y su carpeta eliminados."
     }
 }
 
-# --- 4. CAMBIO DE PERFIL (GRUPO) ---
 function Change-User-Group {
-    $user = Read-Host "Usuario a migrar"
-    if (-not (Get-LocalUser -Name $user -ErrorAction SilentlyContinue)) {
-        Log-Error "Error: Usuario '$user' no encontrado."
-        return
+    $user = Read-Host "Nombre de usuario a migrar"
+    if (Get-LocalUser -Name $user -ErrorAction SilentlyContinue) {
+        $opt = Read-Host "Mover a: 1) $GROUP_A 2) $GROUP_B"
+        $nGroup = if ($opt -eq "2") { $GROUP_B } else { $GROUP_A }
+        
+        Remove-LocalGroupMember -Group $GROUP_A -Member $user -ErrorAction SilentlyContinue
+        Remove-LocalGroupMember -Group $GROUP_B -Member $user -ErrorAction SilentlyContinue
+        Add-LocalGroupMember -Group $nGroup -Member $user
+        
+        Add-FTP-User -userIn $user
+        Log-Info "Migracion completada."
     }
-
-    $cGroup = ""
-    if (Get-LocalGroupMember -Group $GROUP_A | Where-Object { $_.Name -like "*\$user" }) { $cGroup = $GROUP_A }
-    elseif (Get-LocalGroupMember -Group $GROUP_B | Where-Object { $_.Name -like "*\$user" }) { $cGroup = $GROUP_B }
-
-    Log-Info "Usuario: $user | Actual: $cGroup"
-    Write-Host "Mover a: 1) $GROUP_A  2) $GROUP_B"
-    $opt = Read-Host "Nueva seleccion"
-    $nGroup = if ($opt -eq "2") { $GROUP_B } else { $GROUP_A }
-
-    if ($cGroup -eq $nGroup) {
-        Log-Info "El usuario ya esta en el grupo $nGroup."
-        return
-    }
-
-    if ($cGroup) { Remove-LocalGroupMember -Group $cGroup -Member $user }
-    Add-LocalGroupMember -Group $nGroup -Member $user
-
-    $hPath = "$USERS_HOME\$user"
-    if (Test-Path "$hPath\$cGroup") { cmd /c "rmdir ""$hPath\$cGroup""" }
-    cmd /c "mklink /J ""$hPath\$nGroup"" ""$GROUPS_DIR\$nGroup""" | Out-Null
-
-    # Asegurar que las carpetas base existen
-    if (-not (Test-Path "$hPath\usuario")) { New-Item -ItemType Directory -Path "$hPath\usuario" -Force | Out-Null }
-    if (-not (Test-Path "$hPath\publica")) { cmd /c "mklink /J ""$hPath\publica"" ""$PUBLIC_DIR""" | Out-Null }
-
-    # Limpiar carpeta tmp si existe
-    if (Test-Path "$hPath\tmp") { Remove-Item "$hPath\tmp" -Recurse -Force }
-
-    Log-Info "Migracion de '$user' a '$nGroup' exitosa."
 }
 
-# --- BUCLE DE MENU ---
-$currentChoice = "0"
-while ($currentChoice -ne "7") {
+$opt = "0"
+while ($opt -ne "7") {
     Clear-Host
-    Write-Host "-------------------------------------------"
-    Write-Host "    CONTROL DE SERVIDOR FTP - WINDOWS      "
-    Write-Host "-------------------------------------------"
-    Write-Host "1) Despliegue de IIS y Sitio FTP"
-    Write-Host "2) Registrar un Usuario Nuevo"
-    Write-Host "3) Eliminar un Usuario del Sistema"
-    Write-Host "4) Cambiar Perfil (Grupo) de Usuario"
-    Write-Host "5) Auditoria de Cuentas por Grupo"
-    Write-Host "6) Forzar Reinicio del Servicio"
-    Write-Host "7) Finalizar Salida"
-    Write-Host "-------------------------------------------"
-    $currentChoice = Read-Host "Ingrese seleccion"
-
-    switch ($currentChoice) {
+    Write-Host "1) Despliegue FTP (Arregla Error 530)`n2) Registrar/Reparar Usuario`n3) Eliminar Usuario`n4) Cambiar Grupo`n5) Auditoria`n6) Reiniciar Servicio`n7) Salir"
+    $opt = Read-Host "Opcion"
+    switch ($opt) {
         "1" { Setup-IIS-FTP; Configure-FTP-Site; break }
         "2" { Add-FTP-User; break }
         "3" { Remove-FTP-User; break }
         "4" { Change-User-Group; break }
-        "5" { 
-              Write-Host "Listado ${GROUP_A}:"
-              Get-LocalGroupMember -Group $GROUP_A | Select-Object Name
-              Write-Host "Listado ${GROUP_B}:"
-              Get-LocalGroupMember -Group $GROUP_B | Select-Object Name
-              break 
-            }
-        "6" { Restart-Service ftpsvc; Log-Info "Servicio FTP reiniciado."; break }
-        "7" { Log-Info "Saliendo..."; break }
+        "5" { Get-LocalGroupMember -Group $GROUP_A; Get-LocalGroupMember -Group $GROUP_B; break }
+        "6" { Restart-Service ftpsvc; break }
     }
-    if ($currentChoice -ne "7") { Read-Host "...Presione Enter" }
+    if ($opt -ne "7") { Read-Host "Presione Enter" }
 }
