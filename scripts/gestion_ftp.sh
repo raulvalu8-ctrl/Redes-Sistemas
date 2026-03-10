@@ -122,19 +122,19 @@ crear_usuario() {
     printf "%s:%s" "$user" "$pass" | sudo chpasswd
     
     U_FTP="/home/$user"
-    sudo mkdir -p "$U_FTP/publica" "$U_FTP/$grupo" "$U_FTP/usuario"
+    sudo mkdir -p "$U_FTP/publica" "$U_FTP/grupo" "$U_FTP/user"
     
     # Montajes
     sudo mount --bind /var/ftp/publica "$U_FTP/publica"
-    sudo mount --bind "/var/ftp/grupos/$grupo" "$U_FTP/$grupo"
+    sudo mount --bind "/var/ftp/grupos/$grupo" "$U_FTP/grupo"
     
     # Carpeta personal y permisos de gestión
     sudo chown -R "$user:$grupo" "$U_FTP"
     sudo chmod 775 "$U_FTP"
-    sudo chmod 775 "$U_FTP/usuario"
+    sudo chmod 775 "$U_FTP/user"
     
     # Limpiar archivos ocultos y carpetas extra para vista de 3 carpetas unicamente
-    sudo find "$U_FTP" -maxdepth 1 -not -name "." -not -name "publica" -not -name "$grupo" -not -name "usuario" -exec rm -rf {} + 2>/dev/null
+    sudo find "$U_FTP" -maxdepth 1 -not -name "." -not -name "publica" -not -name "grupo" -not -name "user" -exec rm -rf {} + 2>/dev/null
     
     echo -e "${VERDE}Usuario $user listo con sus 3 carpetas.${RESET}"
     read -p "Presiona Enter..."
@@ -221,26 +221,26 @@ cambiar_grupo_usuario() {
 
     # 1. Desmontar grupo antiguo
     echo -e "${AMARILLO}Desmontando carpeta del grupo antiguo ($grupo_actual)...${RESET}"
-    sudo umount -l "/home/$user/$grupo_actual" 2>/dev/null
-    sudo rm -rf "/home/$user/$grupo_actual"
+    sudo umount -l "/home/$user/grupo" 2>/dev/null
+    sudo rm -rf "/home/$user/grupo"
 
     # 2. Cambiar grupo principal en el sistema
     sudo usermod -g "$nuevo_grupo" "$user"
 
     # 3. Crear nueva carpeta y cargar montaje
-    sudo mkdir -p "/home/$user/$nuevo_grupo"
-    sudo mount --bind "/var/ftp/grupos/$nuevo_grupo" "/home/$user/$nuevo_grupo"
+    sudo mkdir -p "/home/$user/grupo"
+    sudo mount --bind "/var/ftp/grupos/$nuevo_grupo" "/home/$user/grupo"
 
-    # 4. Asegurar que las carpetas fija (publica, usuario) existen por si acaso
-    sudo mkdir -p "/home/$user/publica" "/home/$user/usuario"
+    # 4. Asegurar que las carpetas fija (publica, user) existen por si acaso
+    sudo mkdir -p "/home/$user/publica" "/home/$user/user"
     sudo mount --bind /var/ftp/publica "/home/$user/publica" 2>/dev/null
 
     # 5. Ajustar permisos
     sudo chown -R "$user:$nuevo_grupo" "/home/$user"
-    sudo chmod 755 "/home/$user/usuario"
+    sudo chmod 755 "/home/$user/user"
     
-    # 6. Limpiar carpetas no deseadas
-    sudo rm -rf "/home/$user/tmp"
+    # 6. Limpiar carpetas no deseadas (publica, grupo, user)
+    sudo find "/home/$user" -maxdepth 1 -not -name "." -not -name "publica" -not -name "grupo" -not -name "user" -exec rm -rf {} + 2>/dev/null
     
     echo -e "${VERDE}El usuario $user ha sido movido al grupo $nuevo_grupo exitosamente.${RESET}"
     read -p "Presiona Enter..."
