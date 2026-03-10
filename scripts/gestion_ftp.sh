@@ -25,12 +25,12 @@ preparar_entorno() {
     sudo mkdir -p /var/run/vsftpd/empty
     sudo chmod 755 /var/run/vsftpd/empty
     
-    # Asegurar que el usuario ftp exista, tenga el shell correcto y esté desbloqueado
+    # Asegurar que el usuario ftp exista, tenga el shell correcto y esté en su zona aislada
     if ! id "ftp" &>/dev/null; then
-        sudo useradd -r -d /var/ftp -s /bin/false ftp 2>/dev/null
+        sudo useradd -r -d /var/ftp_anon -s /bin/false ftp > /dev/null 2>&1
     else
-        # Forzar el home y el shell correctos si ya existe
-        sudo usermod -d /var/ftp -s /bin/false ftp > /dev/null 2>&1
+        # Forzar el home aislado para que vsftpd no se confunda
+        sudo usermod -d /var/ftp_anon -s /bin/false ftp > /dev/null 2>&1
     fi
     sudo usermod -U ftp > /dev/null 2>&1
 
@@ -42,13 +42,18 @@ preparar_entorno() {
     sudo chmod 755 /var/ftp
     
     # --- AISLAMIENTO ANÓNIMO (Solo carpeta 'general') ---
+    # Limpiamos CUALQUIER rastro previo para que no haya fugas
+    sudo umount -l /var/ftp_anon/general 2>/dev/null
+    sudo rm -rf /var/ftp_anon
     sudo mkdir -p /var/ftp_anon/general
     sudo chown root:root /var/ftp_anon
     sudo chmod 755 /var/ftp_anon
     
-    # Desmontar por si acaso antes de volver a montar
-    sudo umount -l /var/ftp_anon/general 2>/dev/null
+    # Montar la carpeta compartida como 'general'
     sudo mount --bind /var/ftp/publica /var/ftp_anon/general
+    
+    # Eliminar carpeta 'pub' por defecto si existe en /var/ftp para evitar confusiones
+    sudo rm -rf /var/ftp/pub 2>/dev/null
     
     # Permisos totales para que puedan crear carpetas y archivos dentro
     sudo chmod 777 /var/ftp/publica
@@ -141,7 +146,7 @@ crear_usuario() {
     sudo chmod 775 "$U_FTP/user"
     
     # Limpiar archivos ocultos y carpetas extra para vista de 3 carpetas unicamente
-    sudo find "$U_FTP" -maxdepth 1 -not -name "." -not -name "publica" -not -name "grupo" -not -name "user" -exec rm -rf {} + 2>/dev/null
+    sudo find "$U_FTP" -maxdepth 1 -mindepth 1 -not -name "publica" -not -name "grupo" -not -name "user" -exec rm -rf {} + 2>/dev/null
     
     echo -e "${VERDE}Usuario $user listo con sus 3 carpetas.${RESET}"
     read -p "Presiona Enter..."
@@ -247,7 +252,7 @@ cambiar_grupo_usuario() {
     sudo chmod 755 "/home/$user/user"
     
     # 6. Limpiar carpetas no deseadas (publica, grupo, user)
-    sudo find "/home/$user" -maxdepth 1 -not -name "." -not -name "publica" -not -name "grupo" -not -name "user" -exec rm -rf {} + 2>/dev/null
+    sudo find "/home/$user" -maxdepth 1 -mindepth 1 -not -name "publica" -not -name "grupo" -not -name "user" -exec rm -rf {} + 2>/dev/null
     
     echo -e "${VERDE}El usuario $user ha sido movido al grupo $nuevo_grupo exitosamente.${RESET}"
     read -p "Presiona Enter..."
