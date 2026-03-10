@@ -35,9 +35,12 @@ function Setup-IIS-FTP {
     $dirs = @($BASE_PATH, $GROUPS_DIR, $USERS_HOME, $PUBLIC_DIR, $ANON_HOME)
     foreach ($d in $dirs) { if (-not (Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null } }
 
-    # Junction para Anonimo
-    $j = "$ANON_HOME\publica"; cmd /c "if exist ""$j"" rmdir ""$j"""
+    # Junction para Anonimo (Solo carpeta 'general')
+    $j = "$ANON_HOME\general"; cmd /c "if exist ""$j"" rmdir ""$j"""
     cmd /c "mklink /J ""$j"" ""$PUBLIC_DIR""" | Out-Null
+    
+    # Limpieza estricta de la carpeta anonima para que solo vea 'general'
+    Get-ChildItem $ANON_HOME | Where-Object { $_.Name -ne "general" } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
     # Grupos
     foreach ($g in @($GROUP_A, $GROUP_B, $GROUP_BASE)) {

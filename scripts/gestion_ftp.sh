@@ -30,18 +30,25 @@ preparar_entorno() {
         sudo useradd -r -d /var/ftp -s /bin/false ftp 2>/dev/null
     else
         # Forzar el home y el shell correctos si ya existe
-        sudo usermod -d /var/ftp -s /bin/false ftp 2>/dev/null
+        sudo usermod -d /var/ftp -s /bin/false ftp > /dev/null 2>&1
     fi
-    sudo usermod -U ftp 2>/dev/null
+    sudo usermod -U ftp > /dev/null 2>&1
 
     # vsftpd es extremadamente estricto con el chroot: la raíz NO puede tener escritura.
-    # Debe ser propiedad de root:root y permisos 755.
-    # La carpeta 'publica' y 'grupos' deben ser gestionables
     sudo mkdir -p /var/ftp/publica
-    sudo mkdir -p /var/ftp/grupos/reprobados
+    sudo mkdir -p /var/ftp/grupos
     
     sudo chown root:root /var/ftp
     sudo chmod 755 /var/ftp
+    
+    # --- AISLAMIENTO ANÓNIMO (Solo carpeta 'general') ---
+    sudo mkdir -p /var/ftp_anon/general
+    sudo chown root:root /var/ftp_anon
+    sudo chmod 755 /var/ftp_anon
+    
+    # Desmontar por si acaso antes de volver a montar
+    sudo umount -l /var/ftp_anon/general 2>/dev/null
+    sudo mount --bind /var/ftp/publica /var/ftp_anon/general
     
     # Permisos totales para que puedan crear carpetas y archivos dentro
     sudo chmod 777 /var/ftp/publica
@@ -68,10 +75,10 @@ listen_ipv6=NO
 ssl_enable=NO
 check_shell=NO
 
-# Acceso Anónimo (Default)
+# Acceso Anónimo (Aislado con carpeta 'general')
 anonymous_enable=YES
 no_anon_password=YES
-anon_root=/var/ftp
+anon_root=/var/ftp_anon
 ftp_username=ftp
 anon_world_readable_only=NO
 anon_upload_enable=YES
