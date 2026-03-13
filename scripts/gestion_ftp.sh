@@ -25,32 +25,21 @@ preparar_entorno() {
     sudo mkdir -p /var/run/vsftpd/empty
     sudo chmod 755 /var/run/vsftpd/empty
     
-    # Asegurar que el usuario ftp exista, tenga el shell correcto y esté en su zona aislada
+    # Asegurar que el usuario ftp exista (visto como sistema) pero sin uso FTP
     if ! id "ftp" &>/dev/null; then
-        sudo useradd -r -d /var/ftp_anon -s /bin/false ftp > /dev/null 2>&1
-    else
-        # Forzar el home aislado para que vsftpd no se confunda
-        sudo usermod -d /var/ftp_anon -s /bin/false ftp > /dev/null 2>&1
+        sudo useradd -r -d /var/ftp -s /bin/false ftp > /dev/null 2>&1
     fi
     sudo usermod -U ftp > /dev/null 2>&1
 
-    # vsftpd es extremadamente estricto con el chroot: la raíz NO puede tener escritura.
+    # --- LIMPIEZA DE RASTROS ANONIMOS ---
+    sudo umount -l /var/ftp_anon/general 2>/dev/null
+    sudo rm -rf /var/ftp_anon 2>/dev/null
+    
+    # Asegurar carpetas base para usuarios reales
     sudo mkdir -p /var/ftp/publica
     sudo mkdir -p /var/ftp/grupos
-    
     sudo chown root:root /var/ftp
     sudo chmod 755 /var/ftp
-    
-    # --- AISLAMIENTO ANÓNIMO (Solo carpeta 'general') ---
-    # Limpiamos CUALQUIER rastro previo para que no haya fugas
-    sudo umount -l /var/ftp_anon/general 2>/dev/null
-    sudo rm -rf /var/ftp_anon
-    sudo mkdir -p /var/ftp_anon/general
-    sudo chown root:root /var/ftp_anon
-    sudo chmod 755 /var/ftp_anon
-    
-    # Montar la carpeta compartida como 'general'
-    sudo mount --bind /var/ftp/publica /var/ftp_anon/general
     
     # Eliminar carpeta 'pub' por defecto si existe en /var/ftp para evitar confusiones
     sudo rm -rf /var/ftp/pub 2>/dev/null
@@ -59,6 +48,17 @@ preparar_entorno() {
     sudo chmod 777 /var/ftp/publica
     sudo chmod 777 /var/ftp/grupos
     sudo chmod 777 /var/ftp/grupos/reprobados
+
+    # --- CONFIGURACION ANONIMA ESTRICTA (SOLO LECTURA) ---
+    sudo mkdir -p /var/ftp_anon/publica
+    sudo umount -l /var/ftp_anon/publica 2>/dev/null || true
+    sudo mount --bind /var/ftp/publica /var/ftp_anon/publica
+    
+    # Asegurar que la raíz sea de root y no escribible para anonimo
+    sudo chown root:root /var/ftp_anon
+    sudo chmod 555 /var/ftp_anon
+    sudo chown root:root /var/ftp_anon/publica
+    sudo chmod 555 /var/ftp_anon/publica
 
     # Configuración maestra optimizada para FileZilla y Mageia
     sudo bash -c 'cat <<EOF > /etc/vsftpd/vsftpd.conf
@@ -77,18 +77,17 @@ pasv_max_port=10100
 secure_chroot_dir=/var/run/vsftpd/empty
 pam_service_name=vsftpd
 listen_ipv6=NO
-ssl_enable=NO
 check_shell=NO
 
-# Acceso Anónimo (Aislado con carpeta 'general')
+# Acceso Anónimo (ESTRICTO: Solo Lectura, Solo Publica)
 anonymous_enable=YES
 no_anon_password=YES
 anon_root=/var/ftp_anon
 ftp_username=ftp
-anon_world_readable_only=NO
-anon_upload_enable=YES
-anon_mkdir_write_enable=YES
-anon_other_write_enable=YES
+anon_world_readable_only=YES
+anon_upload_enable=NO
+anon_mkdir_write_enable=NO
+anon_other_write_enable=NO
 EOF'
     
     # Limpiar posibles bloqueos de usuario ftp en listas de seguridad
@@ -121,34 +120,89 @@ verificar_y_instalar() {
 
 # --- 2. GESTIÓN DE USUARIOS ---
 crear_usuario() {
+    Log-Header "Registrar/Reparar Usuario"
     read -p "Nombre del usuario: " user
     read -p "Escribe la contraseña (VISIBLE): " pass
-    grupo="reprobados"
     
-    # Crear la carpeta base si no existe para evitar el error de "dispositivo especial"
-    sudo mkdir -p "/var/ftp/publica"
-    sudo mkdir -p "/var/ftp/grupos/$grupo"
+    # --- Selección de Grupo Interactiva ---
+    echo -e "${CYAN}[+] Grupos de Clase disponibles:${NC}"
+    # Listar carpetas en /var/ftp/grupos
+    group_folders=$(ls /var/ftp/grupos 2>/dev/null)
+    # Listar grupos que existen en el sistema y tienen carpeta o son el default
+    groups=($(awk -F: -v folders="$group_folders" -v def="$GROUP_A" 'BEGIN{split(folders,f," ")} {for(i in f) if($1==f[i] || $1==def) {print $1; break}}' /etc/group | sort -u | head -n 10))
     
-    sudo groupadd "$grupo" 2>/dev/null
-    sudo useradd -m -g "$grupo" -s /sbin/nologin "$user"
-    printf "%s:%s" "$user" "$pass" | sudo chpasswd
+    if [ ${#groups[@]} -eq 0 ]; then
+        cGroup=$GROUP_A
+    else
+        for i in "${!groups[@]}"; do
+            echo -e "  [$((i+1))] ${groups[$i]}"
+        done
+        read -p "Seleccione el número o escriba el nombre del grupo (Enter para '$GROUP_A'): " in
+        
+        if [[ $in =~ ^[0-9]+$ ]] && [ "$in" -ge 1 ] && [ "$in" -le "${#groups[@]}" ]; then
+            cGroup=${groups[$((in-1))]}
+        elif [[ " ${groups[*]} " =~ " $in " ]]; then
+            cGroup=$in
+        else
+            cGroup=$GROUP_A
+        fi
+    fi
+
+    # Asegurar que el grupo exista en el sistema y carpeta física
+    if ! getent group "$cGroup" > /dev/null; then
+        sudo groupadd "$cGroup" 2>/dev/null
+    fi
+    sudo mkdir -p "/var/ftp/grupos/$cGroup"
+    sudo chmod 777 "/var/ftp/grupos/$cGroup"
+
+    if ! id "$user" &>/dev/null; then
+        # Crear usuario con home en /var/ftp/usuario
+        sudo useradd -m -d "/var/ftp/$user" -s /bin/false "$user"
+        sudo usermod -aG "$GROUP_BASE" "$user"
+    fi
+
+    # Limpiar pertenencia a otros grupos (un usuario solo debe estar en su grupo asignado + base)
+    # Obtenemos grupos actuales excluyendo el grupo primario del usuario
+    current_groups=$(id -Gn "$user")
+    for g in $current_groups; do
+        if [[ "$g" != "$GROUP_BASE" && "$g" != "$user" && "$g" != "$cGroup" ]]; then
+            sudo gpasswd -d "$user" "$g" 2>/dev/null
+        fi
+    done
+    sudo usermod -aG "$cGroup" "$user"
     
-    U_FTP="/home/$user"
-    sudo mkdir -p "$U_FTP/publica" "$U_FTP/$grupo" "$U_FTP/user"
+    # Establecer/Actualizar contraseña
+    echo "$user:$pass" | sudo chpasswd
+
+    # --- Estructura de 3 Carpetas ---
+    user_home="/var/ftp/$user"
+    sudo mkdir -p "$user_home/user"
+    sudo mkdir -p "$user_home/publica"
+    sudo mkdir -p "$user_home/$cGroup"
     
-    # Montajes
-    sudo mount --bind /var/ftp/publica "$U_FTP/publica"
-    sudo mount --bind "/var/ftp/grupos/$grupo" "$U_FTP/$grupo"
+    # Desmontar cualquier cosa previa para limpiar rastro de grupos antiguos
+    # Buscamos montajes que pertenezcan a este usuario
+    mounts=$(mount | grep "$user_home/" | awk '{print $3}')
+    for m in $mounts; do
+        sudo umount -l "$m" 2>/dev/null || true
+    done
     
-    # Carpeta personal y permisos de gestión
-    sudo chown -R "$user:$grupo" "$U_FTP"
-    sudo chmod 775 "$U_FTP"
-    sudo chmod 775 "$U_FTP/user"
+    # Borrar carpetas de grupos antiguos (solo dejamos user y publica)
+    sudo find "$user_home" -maxdepth 1 -mindepth 1 -not -name "user" -not -name "publica" -not -name "$cGroup" -exec rm -rf {} + 2>/dev/null
+
+    # Re-montar
+    sudo mount --bind /var/ftp/publica "$user_home/publica"
+    sudo mount --bind "/var/ftp/grupos/$cGroup" "$user_home/$cGroup"
     
-    # Limpiar archivos ocultos y carpetas extra para vista de 3 carpetas unicamente
-    sudo find "$U_FTP" -maxdepth 1 -mindepth 1 -not -name "publica" -not -name "$grupo" -not -name "user" -exec rm -rf {} + 2>/dev/null
+    # Asegurar propiedad y permisos restrictivos para chroot
+    sudo chown root:root "$user_home"
+    sudo chmod 755 "$user_home"
     
-    echo -e "${VERDE}Usuario $user listo con sus 3 carpetas.${RESET}"
+    # La carpeta 'user' y el contenido de los mounts deben ser accesibles
+    sudo chown "$user:$user" "$user_home/user"
+    sudo chmod 700 "$user_home/user"
+
+    echo -e "${VERDE}[+] Usuario '$user' configurado en grupo '$cGroup'.${NC}"
     read -p "Presiona Enter..."
 }
 
@@ -253,7 +307,8 @@ cambiar_grupo_usuario() {
     sudo chown -R "$user:$nuevo_grupo" "/home/$user"
     sudo chmod 755 "/home/$user/user"
     
-    # 6. Limpiar carpetas no deseadas (publica, grupo, user)
+    # 6. Limpiar carpetas no deseadas para vista de 3 carpetas impecable
+    # solo permitimos: publica, [nombre_nuevo_grupo] y user
     sudo find "/home/$user" -maxdepth 1 -mindepth 1 -not -name "publica" -not -name "$nuevo_grupo" -not -name "user" -exec rm -rf {} + 2>/dev/null
     
     echo -e "${VERDE}El usuario $user ha sido movido al grupo $nuevo_grupo exitosamente.${RESET}"
