@@ -46,7 +46,7 @@ while true; do
             echo -e "  ${CYAN}Versiones disponibles:${NC}"
             echo "$versions"
             echo ""
-            read -p "  Ingrese la version exacta a instalar: " VERSION
+            read -p "  Ingrese la version exacta a instalar (o 'latest'): " VERSION
             if ! validate_input "$VERSION"; then
                 fn_err "Version invalida."
                 continue
@@ -59,7 +59,7 @@ while true; do
             echo -e "  ${CYAN}Versiones disponibles:${NC}"
             echo "$versions"
             echo ""
-            read -p "  Ingrese la version exacta a instalar: " VERSION
+            read -p "  Ingrese la version exacta a instalar (o 'latest'): " VERSION
             if ! validate_input "$VERSION"; then
                 fn_err "Version invalida."
                 continue
