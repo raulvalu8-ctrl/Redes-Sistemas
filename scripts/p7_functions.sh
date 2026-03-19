@@ -801,9 +801,10 @@ fn_instalar_web_con_ssl() {
 
             local APACHE_CONF="/etc/httpd/conf/httpd.conf"
             local APACHE_CONFD="/etc/httpd/conf.d"
+            mkdir -p "$APACHE_CONFD"
 
-            # Ajustar puerto de escucha
-            sed -i "s/^Listen 80$/Listen ${PUERTO}/" "$APACHE_CONF" 2>/dev/null
+            # Ajustar puerto de escucha (reemplaza cualquier puerto Listen existente)
+            sed -i "s/^Listen.*$/Listen ${PUERTO}/" "$APACHE_CONF" 2>/dev/null
 
             if [ "$SSL" = "si" ]; then
                 fn_generar_certificado_ssl "apache"
