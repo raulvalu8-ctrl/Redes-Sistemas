@@ -800,7 +800,7 @@ fn_instalar_web_con_ssl() {
             urpmi --auto --quiet apache apache-mod_ssl apache-mod_headers 2>/dev/null
 
             local APACHE_CONF="/etc/httpd/conf/httpd.conf"
-            local APACHE_CONFD="/etc/httpd/conf.d"
+            local APACHE_CONFD="/etc/httpd/conf/conf.d"
             local WEBROOT="/var/www/html"
             mkdir -p "$APACHE_CONFD" "$WEBROOT"
 
@@ -825,8 +825,6 @@ fn_instalar_web_con_ssl() {
                 SSL_LABEL="Si (puerto 443)"
 
                 cat > "${APACHE_CONFD}/practica7-ssl.conf" <<APACHESSLCONF
-Listen 443
-
 <VirtualHost *:443>
     ServerName ${DOMINIO}
     DocumentRoot ${WEBROOT}
