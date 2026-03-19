@@ -797,25 +797,39 @@ fn_instalar_web_con_ssl() {
     case "$SERVICIO" in
         apache)
             # En Mageia: paquete=apache, servicio=httpd, conf=/etc/httpd/conf/httpd.conf
-            urpmi --auto --quiet apache apache-mod_ssl 2>/dev/null
+            urpmi --auto --quiet apache apache-mod_ssl apache-mod_headers 2>/dev/null
 
             local APACHE_CONF="/etc/httpd/conf/httpd.conf"
             local APACHE_CONFD="/etc/httpd/conf.d"
-            mkdir -p "$APACHE_CONFD"
+            local WEBROOT="/var/www/html"
+            mkdir -p "$APACHE_CONFD" "$WEBROOT"
+
+            # Limpiar configuracion previa de practica7
+            rm -f "${APACHE_CONFD}/practica7-ssl.conf" 2>/dev/null
 
             # Ajustar puerto de escucha (reemplaza cualquier puerto Listen existente)
             sed -i "s/^Listen.*$/Listen ${PUERTO}/" "$APACHE_CONF" 2>/dev/null
 
+            # Asegurar que mod_ssl y mod_headers esten cargados
+            grep -q 'LoadModule ssl_module' "$APACHE_CONF" || \
+                echo "LoadModule ssl_module modules/mod_ssl.so" >> "$APACHE_CONF"
+            grep -q 'LoadModule headers_module' "$APACHE_CONF" || \
+                echo "LoadModule headers_module modules/mod_headers.so" >> "$APACHE_CONF"
+            grep -q 'LoadModule socache_shmcb_module' "$APACHE_CONF" || \
+                echo "LoadModule socache_shmcb_module modules/mod_socache_shmcb.so" >> "$APACHE_CONF"
+
+            local SSL_LABEL="No"
             if [ "$SSL" = "si" ]; then
                 fn_generar_certificado_ssl "apache"
                 local CERT_DIR="${SSL_DIR}/apache"
+                SSL_LABEL="Si (puerto 443)"
 
                 cat > "${APACHE_CONFD}/practica7-ssl.conf" <<APACHESSLCONF
 Listen 443
 
 <VirtualHost *:443>
     ServerName ${DOMINIO}
-    DocumentRoot /var/www/html
+    DocumentRoot ${WEBROOT}
     SSLEngine on
     SSLCertificateFile    ${CERT_DIR}/server.crt
     SSLCertificateKeyFile ${CERT_DIR}/server.key
@@ -831,10 +845,45 @@ APACHESSLCONF
                 fn_sec "VirtualHost SSL creado."
             fi
 
+            # Crear pagina HTML con datos correctos
+            cat > "${WEBROOT}/index.html" <<HTMLEOF
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Apache - Activo</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eee;
+               display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: #16213e; padding: 40px 60px; border-radius: 12px;
+                border-left: 6px solid #0f3460; text-align: center; }
+        h1 { color: #e94560; }
+        .badge { display: inline-block; background: #0f3460; padding: 4px 14px;
+                 border-radius: 20px; margin: 4px; font-size: 0.9em; }
+        .status { color: #4ade80; font-weight: bold; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Apache - Mageia Linux</h1>
+        <div>
+            <span class="badge">Servidor: Apache</span>
+            <span class="badge">Puerto HTTP: ${PUERTO}</span>
+            <span class="badge">SSL: ${SSL_LABEL}</span>
+        </div>
+        <div>OS: Mageia Linux</div>
+        <div>Dominio: ${DOMINIO}</div>
+        <div class="status">Servidor activo y funcionando</div>
+        <p style="font-size:0.8em;color:#888">Practica 7 - FTP + SSL</p>
+    </div>
+</body>
+</html>
+HTMLEOF
+
             systemctl enable httpd 2>/dev/null
             systemctl restart httpd 2>/dev/null
             fn_ok "Apache instalado via urpmi (servicio: httpd) - puerto ${PUERTO}"
-            RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Apache] Puerto: ${PUERTO} | SSL: ${SSL} | Origen: WEB"
+            RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Apache] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
             ;;
 
         nginx)
