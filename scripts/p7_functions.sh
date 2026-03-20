@@ -1088,12 +1088,12 @@ HTMLEOF
                     chmod 640 "${CERT_DIR}/keystore.jks"
                     fn_sec "Keystore JKS generado: ${CERT_DIR}/keystore.jks"
 
-                    # Eliminar conector SSL previo si existe y agregar el correcto
-                    # Primero limpiar conectores SSL anteriores del practica7
-                    sed -i '/practica7/d' "${TOMCAT_CONF}/server.xml" 2>/dev/null
-
                     # Agregar conector SSL con keystore JKS
-                    sed -i "s|</Service>|    <Connector port=\"${PUERTO_SSL_TC}\" protocol=\"org.apache.coyote.http11.Http11NioProtocol\"\n               SSLEnabled=\"true\" scheme=\"https\" secure=\"true\"\n               keystoreFile=\"${CERT_DIR}/keystore.jks\"\n               keystorePass=\"practica7\"\n               clientAuth=\"false\" sslProtocol=\"TLS\"\n               maxThreads=\"150\" /><!-- practica7 -->\n</Service>|" \
+                    # Desactivar APR/OpenSSL nativo para evitar UnsatisfiedLinkError
+                    sed -i 's|className="org.apache.catalina.core.AprLifecycleListener".*SSLEngine="on"|className="org.apache.catalina.core.AprLifecycleListener" SSLEngine="off"|' \
+                        "${TOMCAT_CONF}/server.xml" 2>/dev/null
+
+                    sed -i "s|</Service>|    <Connector port=\"${PUERTO_SSL_TC}\"\n               protocol=\"org.apache.coyote.http11.Http11NioProtocol\"\n               SSLEnabled=\"true\" scheme=\"https\" secure=\"true\"\n               keystoreFile=\"${CERT_DIR}/keystore.jks\"\n               keystorePass=\"practica7\"\n               clientAuth=\"false\" sslProtocol=\"TLS\"\n               maxThreads=\"150\" /><!-- practica7 -->\n</Service>|" \
                         "${TOMCAT_CONF}/server.xml" 2>/dev/null
 
                     iptables -I INPUT -p tcp --dport "$PUERTO_SSL_TC" -j ACCEPT 2>/dev/null
