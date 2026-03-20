@@ -739,14 +739,19 @@ fn_configurar_ftps() {
     mkdir -p "${SSL_DIR}/vsftpd"
     fn_sec "Generando certificado SSL para vsftpd..."
 
+    # Generar certificado compatible con vsftpd 3.0.5 Mageia + GnuTLS
     openssl req -x509 -nodes -days 365 \
         -newkey rsa:2048 \
         -keyout "${SSL_DIR}/vsftpd/vsftpd.key" \
         -out "${SSL_DIR}/vsftpd/vsftpd.crt" \
         -subj "/C=MX/ST=Sinaloa/L=Culiacan/O=Reprobados/OU=FTP/CN=${SERVER_IP}" \
-        2>/dev/null
+        -sha256 2>/dev/null
 
+    # Combinar en .pem (requerido por algunas versiones de vsftpd)
+    cat "${SSL_DIR}/vsftpd/vsftpd.key" "${SSL_DIR}/vsftpd/vsftpd.crt" \
+        > "${SSL_DIR}/vsftpd/vsftpd.pem"
     chmod 600 "${SSL_DIR}/vsftpd/vsftpd.key"
+    chmod 600 "${SSL_DIR}/vsftpd/vsftpd.pem"
     fn_sec "Certificado FTPS generado."
 
     # Detectar ruta del vsftpd.conf
@@ -760,7 +765,7 @@ fn_configurar_ftps() {
 
     fn_info "Usando configuracion en: $VSFTPD_CONF"
 
-    # Escribir configuracion completa (igual que practica 5 + SSL)
+    # Escribir configuracion completa compatible con vsftpd 3.0.5 Mageia
     cat > "$VSFTPD_CONF" <<VSFTPDEOF
 listen=YES
 local_enable=YES
@@ -785,7 +790,7 @@ anonymous_enable=NO
 
 # FTPS - SSL/TLS - Practica 7
 ssl_enable=YES
-rsa_cert_file=${SSL_DIR}/vsftpd/vsftpd.crt
+rsa_cert_file=${SSL_DIR}/vsftpd/vsftpd.pem
 rsa_private_key_file=${SSL_DIR}/vsftpd/vsftpd.key
 ssl_tlsv1=YES
 ssl_sslv2=NO
@@ -793,8 +798,9 @@ ssl_sslv3=NO
 force_local_data_ssl=YES
 force_local_logins_ssl=YES
 require_ssl_reuse=NO
-ssl_ciphers=HIGH
+ssl_ciphers=ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:AES256-SHA:AES128-SHA
 implicit_ssl=NO
+debug_ssl=YES
 VSFTPDEOF
 
     # Abrir puertos en firewall
