@@ -1021,91 +1021,151 @@ HTMLEOF
             done
 
             local SSL_LABEL="No"
+            local PUERTO_SSL_TC="8443"
 
-            if [ -n "$TOMCAT_CONF" ]; then
-                # Detener tomcat antes de modificar configuracion
-                systemctl stop "$TOMCAT_SVC" 2>/dev/null
+            # Detener tomcat antes de modificar
+            systemctl stop "$TOMCAT_SVC" 2>/dev/null
 
-                # Cambiar puerto HTTP - cubre todos los patrones posibles de Mageia
-                # Patron 1: con address
-                sed -i "s|Connector port=\"[0-9]*\" address=\"[^\"]*\" protocol=\"HTTP/1.1\"|Connector port=\"${PUERTO}\" address=\"0.0.0.0\" protocol=\"HTTP/1.1\"|" \
-                    "${TOMCAT_CONF}/server.xml" 2>/dev/null
-                # Patron 2: sin address
-                sed -i "s|<Connector port=\"[0-9]*\" protocol=\"HTTP/1.1\"|<Connector port=\"${PUERTO}\" protocol=\"HTTP/1.1\"|" \
-                    "${TOMCAT_CONF}/server.xml" 2>/dev/null
+            if [ "$SSL" = "si" ]; then
+                fn_generar_certificado_ssl "tomcat"
+                local CERT_DIR="${SSL_DIR}/tomcat"
 
-                fn_ok "Puerto Tomcat configurado a ${PUERTO}"
-
-                if [ "$SSL" = "si" ]; then
-                    fn_generar_certificado_ssl "tomcat"
-                    local CERT_DIR="${SSL_DIR}/tomcat"
-
-                    # Pedir puerto HTTPS separado
-                    echo ""
-                    echo -e "${YELLOW}Ingresa el puerto HTTPS para Tomcat (ej: 8444, 9444):${NC}"
-                    local PUERTO_SSL_TC=""
-                    while true; do
-                        read -r PUERTO_SSL_TC
-                        if [[ "$PUERTO_SSL_TC" =~ ^[0-9]+$ ]] && [ "$PUERTO_SSL_TC" -ge 1 ] && [ "$PUERTO_SSL_TC" -le 65535 ]; then
-                            if ss -tlnp 2>/dev/null | grep -q ":${PUERTO_SSL_TC} "; then
-                                fn_err "Puerto ${PUERTO_SSL_TC} ya esta en uso. Elige otro."
-                            else
-                                fn_ok "Puerto HTTPS ${PUERTO_SSL_TC} disponible."
-                                break
-                            fi
+                # Pedir puerto HTTPS separado
+                echo ""
+                echo -e "${YELLOW}Ingresa el puerto HTTPS para Tomcat (ej: 8444, 9444):${NC}"
+                while true; do
+                    read -r PUERTO_SSL_TC
+                    if [[ "$PUERTO_SSL_TC" =~ ^[0-9]+$ ]] && [ "$PUERTO_SSL_TC" -ge 1 ] && [ "$PUERTO_SSL_TC" -le 65535 ]; then
+                        if ss -tlnp 2>/dev/null | grep -q ":${PUERTO_SSL_TC} "; then
+                            fn_err "Puerto ${PUERTO_SSL_TC} ya esta en uso. Elige otro."
                         else
-                            fn_err "Puerto invalido."
+                            fn_ok "Puerto HTTPS ${PUERTO_SSL_TC} disponible."
+                            break
                         fi
-                    done
-                    SSL_LABEL="Si (puerto ${PUERTO_SSL_TC})"
-                    PUERTO_SSL_USADO="$PUERTO_SSL_TC"
-
-                    # Convertir certificado PEM a keystore JKS (formato que necesita Tomcat)
-                    fn_sec "Convirtiendo certificado a formato JKS para Tomcat..."
-
-                    # Instalar keytool si no existe (viene con java)
-                    if ! command -v keytool &>/dev/null; then
-                        urpmi --auto --quiet java-11-openjdk 2>/dev/null
+                    else
+                        fn_err "Puerto invalido."
                     fi
+                done
+                SSL_LABEL="Si (puerto ${PUERTO_SSL_TC})"
+                PUERTO_SSL_USADO="$PUERTO_SSL_TC"
 
-                    # Paso 1: PEM -> PKCS12
-                    openssl pkcs12 -export \
-                        -in "${CERT_DIR}/server.crt" \
-                        -inkey "${CERT_DIR}/server.key" \
-                        -out "${CERT_DIR}/keystore.p12" \
-                        -name tomcat \
-                        -passout pass:practica7 2>/dev/null
-
-                    # Paso 2: PKCS12 -> JKS
-                    keytool -importkeystore \
-                        -srckeystore "${CERT_DIR}/keystore.p12" \
-                        -srcstoretype PKCS12 \
-                        -srcstorepass practica7 \
-                        -destkeystore "${CERT_DIR}/keystore.jks" \
-                        -deststorepass practica7 \
-                        -noprompt 2>/dev/null
-
-                    chmod 640 "${CERT_DIR}/keystore.jks"
-                    fn_sec "Keystore JKS generado: ${CERT_DIR}/keystore.jks"
-
-                    # Agregar conector SSL usando HTTP/1.1 (Java puro, sin OpenSSL nativo)
-                    # Esto evita el UnsatisfiedLinkError de APR/OpenSSL en Mageia
-                    sed -i "s|</Service>|    <Connector port=\"${PUERTO_SSL_TC}\"\n               protocol=\"HTTP/1.1\"\n               SSLEnabled=\"true\" scheme=\"https\" secure=\"true\"\n               keystoreFile=\"${CERT_DIR}/keystore.jks\"\n               keystorePass=\"practica7\"\n               clientAuth=\"false\" sslProtocol=\"TLS\"\n               maxThreads=\"150\" /><!-- practica7 -->\n</Service>|" \
-                        "${TOMCAT_CONF}/server.xml" 2>/dev/null
-
-                    iptables -I INPUT -p tcp --dport "$PUERTO_SSL_TC" -j ACCEPT 2>/dev/null
-                    fn_sec "SSL configurado en Tomcat puerto ${PUERTO_SSL_TC}"
+                # Convertir certificado PEM a keystore JKS
+                fn_sec "Convirtiendo certificado a formato JKS para Tomcat..."
+                if ! command -v keytool &>/dev/null; then
+                    urpmi --auto --quiet java-11-openjdk 2>/dev/null
                 fi
 
-                # Crear pagina HTML en el webroot de Tomcat
-                local TOMCAT_WEBROOT=""
-                for DIR in /var/lib/tomcat/webapps/ROOT /var/lib/tomcat9/webapps/ROOT \
-                           /usr/share/tomcat/webapps/ROOT /usr/share/tomcat9/webapps/ROOT; do
-                    [ -d "$DIR" ] && TOMCAT_WEBROOT="$DIR" && break
-                done
+                openssl pkcs12 -export \
+                    -in "${CERT_DIR}/server.crt" \
+                    -inkey "${CERT_DIR}/server.key" \
+                    -out "${CERT_DIR}/keystore.p12" \
+                    -name tomcat \
+                    -passout pass:practica7 2>/dev/null
 
-                if [ -n "$TOMCAT_WEBROOT" ]; then
-                    cat > "${TOMCAT_WEBROOT}/index.html" <<HTMLEOF
+                keytool -importkeystore \
+                    -srckeystore "${CERT_DIR}/keystore.p12" \
+                    -srcstoretype PKCS12 \
+                    -srcstorepass practica7 \
+                    -destkeystore "${CERT_DIR}/keystore.jks" \
+                    -deststorepass practica7 \
+                    -noprompt 2>/dev/null
+
+                chmod 640 "${CERT_DIR}/keystore.jks"
+                fn_sec "Keystore JKS generado: ${CERT_DIR}/keystore.jks"
+
+                # Generar server.xml limpio con SSL usando HTTP/1.1 (Java puro, sin APR)
+                cat > "${TOMCAT_CONF}/server.xml" <<SERVERXML
+<?xml version="1.0" encoding="UTF-8"?>
+<Server port="8005" shutdown="SHUTDOWN">
+  <Listener className="org.apache.catalina.startup.VersionLoggerListener" />
+  <Listener className="org.apache.catalina.core.AprLifecycleListener" SSLEngine="off" />
+  <Listener className="org.apache.catalina.core.JreMemoryLeakPreventionListener" />
+  <Listener className="org.apache.catalina.mbeans.GlobalResourcesLifecycleListener" />
+  <Listener className="org.apache.catalina.core.ThreadLocalLeakPreventionListener" />
+
+  <GlobalNamingResources>
+    <Resource name="UserDatabase" auth="Container"
+              type="org.apache.catalina.UserDatabase"
+              description="User database that can be updated and saved"
+              factory="org.apache.catalina.users.MemoryUserDatabaseFactory"
+              pathname="conf/tomcat-users.xml" />
+  </GlobalNamingResources>
+
+  <Service name="Catalina">
+    <Connector port="${PUERTO}" address="0.0.0.0" protocol="HTTP/1.1"
+               connectionTimeout="20000" redirectPort="${PUERTO_SSL_TC}" />
+    <Connector port="${PUERTO_SSL_TC}" protocol="HTTP/1.1"
+               SSLEnabled="true" scheme="https" secure="true"
+               keystoreFile="${CERT_DIR}/keystore.jks"
+               keystorePass="practica7"
+               clientAuth="false" sslProtocol="TLS"
+               maxThreads="150" />
+    <Engine name="Catalina" defaultHost="localhost">
+      <Realm className="org.apache.catalina.realm.LockOutRealm">
+        <Realm className="org.apache.catalina.realm.UserDatabaseRealm"
+               resourceName="UserDatabase"/>
+      </Realm>
+      <Host name="localhost" appBase="webapps"
+            unpackWARs="true" autoDeploy="true">
+        <Valve className="org.apache.catalina.valves.AccessLogValve"
+               directory="logs" prefix="localhost_access_log"
+               suffix=".txt" pattern="%h %l %u %t &quot;%r&quot; %s %b" />
+      </Host>
+    </Engine>
+  </Service>
+</Server>
+SERVERXML
+                fn_sec "server.xml generado con SSL en puerto ${PUERTO_SSL_TC}"
+
+            else
+                # Generar server.xml limpio sin SSL
+                cat > "${TOMCAT_CONF}/server.xml" <<SERVERXML
+<?xml version="1.0" encoding="UTF-8"?>
+<Server port="8005" shutdown="SHUTDOWN">
+  <Listener className="org.apache.catalina.startup.VersionLoggerListener" />
+  <Listener className="org.apache.catalina.core.AprLifecycleListener" SSLEngine="off" />
+  <Listener className="org.apache.catalina.core.JreMemoryLeakPreventionListener" />
+  <Listener className="org.apache.catalina.mbeans.GlobalResourcesLifecycleListener" />
+  <Listener className="org.apache.catalina.core.ThreadLocalLeakPreventionListener" />
+
+  <GlobalNamingResources>
+    <Resource name="UserDatabase" auth="Container"
+              type="org.apache.catalina.UserDatabase"
+              description="User database that can be updated and saved"
+              factory="org.apache.catalina.users.MemoryUserDatabaseFactory"
+              pathname="conf/tomcat-users.xml" />
+  </GlobalNamingResources>
+
+  <Service name="Catalina">
+    <Connector port="${PUERTO}" address="0.0.0.0" protocol="HTTP/1.1"
+               connectionTimeout="20000" redirectPort="8443" />
+    <Engine name="Catalina" defaultHost="localhost">
+      <Realm className="org.apache.catalina.realm.LockOutRealm">
+        <Realm className="org.apache.catalina.realm.UserDatabaseRealm"
+               resourceName="UserDatabase"/>
+      </Realm>
+      <Host name="localhost" appBase="webapps"
+            unpackWARs="true" autoDeploy="true">
+        <Valve className="org.apache.catalina.valves.AccessLogValve"
+               directory="logs" prefix="localhost_access_log"
+               suffix=".txt" pattern="%h %l %u %t &quot;%r&quot; %s %b" />
+      </Host>
+    </Engine>
+  </Service>
+</Server>
+SERVERXML
+                fn_ok "server.xml generado en puerto ${PUERTO}"
+            fi
+
+            # Crear pagina HTML en el webroot de Tomcat
+            local TOMCAT_WEBROOT=""
+            for DIR in /var/lib/tomcat/webapps/ROOT /var/lib/tomcat9/webapps/ROOT \
+                       /usr/share/tomcat/webapps/ROOT /usr/share/tomcat9/webapps/ROOT; do
+                [ -d "$DIR" ] && TOMCAT_WEBROOT="$DIR" && break
+            done
+
+            if [ -n "$TOMCAT_WEBROOT" ]; then
+                cat > "${TOMCAT_WEBROOT}/index.html" <<HTMLEOF
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -1138,8 +1198,10 @@ HTMLEOF
 </body>
 </html>
 HTMLEOF
-                fi
             fi
+
+            iptables -I INPUT -p tcp --dport "$PUERTO" -j ACCEPT 2>/dev/null
+            [ "$SSL" = "si" ] && iptables -I INPUT -p tcp --dport "$PUERTO_SSL_TC" -j ACCEPT 2>/dev/null
 
             systemctl enable "$TOMCAT_SVC" 2>/dev/null
             systemctl restart "$TOMCAT_SVC" 2>/dev/null
