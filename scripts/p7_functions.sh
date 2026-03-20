@@ -1023,8 +1023,20 @@ HTMLEOF
             local SSL_LABEL="No"
 
             if [ -n "$TOMCAT_CONF" ]; then
-                # Cambiar puerto HTTP
-                sed -i "s/port=\"8080\"/port=\"${PUERTO}\"/" "${TOMCAT_CONF}/server.xml" 2>/dev/null
+                # Detener tomcat antes de modificar configuracion
+                systemctl stop "$TOMCAT_SVC" 2>/dev/null
+
+                # Cambiar puerto HTTP - reemplaza cualquier puerto en el conector HTTP principal
+                # Busca el Connector con protocol HTTP/1.1 y cambia su puerto
+                sed -i "s|<Connector port=\"[0-9]*\" protocol=\"HTTP/1.1\"|<Connector port=\"${PUERTO}\" protocol=\"HTTP/1.1\"|" \
+                    "${TOMCAT_CONF}/server.xml" 2>/dev/null
+
+                # Fallback: si no encontro el patron anterior, reemplaza 8080 o cualquier puerto comun
+                grep -q "port=\"${PUERTO}\"" "${TOMCAT_CONF}/server.xml" || \
+                    sed -i "s/port=\"[0-9]*\" protocol=\"HTTP/port=\"${PUERTO}\" protocol=\"HTTP/" \
+                    "${TOMCAT_CONF}/server.xml" 2>/dev/null
+
+                fn_ok "Puerto Tomcat configurado a ${PUERTO}"
 
                 if [ "$SSL" = "si" ]; then
                     fn_generar_certificado_ssl "tomcat"
@@ -1055,6 +1067,49 @@ HTMLEOF
 
                     iptables -I INPUT -p tcp --dport "$PUERTO_SSL_TC" -j ACCEPT 2>/dev/null
                     fn_sec "SSL configurado en Tomcat puerto ${PUERTO_SSL_TC}"
+                fi
+
+                # Crear pagina HTML en el webroot de Tomcat
+                local TOMCAT_WEBROOT=""
+                for DIR in /var/lib/tomcat/webapps/ROOT /var/lib/tomcat9/webapps/ROOT \
+                           /usr/share/tomcat/webapps/ROOT /usr/share/tomcat9/webapps/ROOT; do
+                    [ -d "$DIR" ] && TOMCAT_WEBROOT="$DIR" && break
+                done
+
+                if [ -n "$TOMCAT_WEBROOT" ]; then
+                    cat > "${TOMCAT_WEBROOT}/index.html" <<HTMLEOF
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Tomcat - Activo</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eee;
+               display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: #16213e; padding: 40px 60px; border-radius: 12px;
+                border-left: 6px solid #0f3460; text-align: center; }
+        h1 { color: #e94560; }
+        .badge { display: inline-block; background: #0f3460; padding: 4px 14px;
+                 border-radius: 20px; margin: 4px; font-size: 0.9em; }
+        .status { color: #4ade80; font-weight: bold; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Tomcat - Mageia Linux</h1>
+        <div>
+            <span class="badge">Servidor: Tomcat</span>
+            <span class="badge">Puerto HTTP: ${PUERTO}</span>
+            <span class="badge">SSL: ${SSL_LABEL}</span>
+        </div>
+        <div>OS: Mageia Linux</div>
+        <div>Dominio: ${DOMINIO}</div>
+        <div class="status">Servidor activo y funcionando</div>
+        <p style="font-size:0.8em;color:#888">Practica 7 - FTP + SSL</p>
+    </div>
+</body>
+</html>
+HTMLEOF
                 fi
             fi
 
