@@ -888,49 +888,118 @@ HTMLEOF
             urpmi --auto --quiet nginx 2>/dev/null
 
             local NGINX_CONFD="/etc/nginx/conf.d"
-            mkdir -p "$NGINX_CONFD"
+            local NGINX_WEBROOT="/usr/share/nginx/html"
+            mkdir -p "$NGINX_CONFD" "$NGINX_WEBROOT"
             rm -f "${NGINX_CONFD}/default.conf" 2>/dev/null
 
-            cat > "${NGINX_CONFD}/practica7.conf" <<NGINXCONF
-server {
-    listen ${PUERTO};
-    server_name ${DOMINIO};
-    root /usr/share/nginx/html;
-    index index.html;
-    server_tokens off;
-
-    add_header X-Frame-Options SAMEORIGIN always;
-    add_header X-Content-Type-Options nosniff always;
-    add_header X-XSS-Protection "1; mode=block" always;
-NGINXCONF
+            local SSL_LABEL="No"
+            local PUERTO_SSL=""
 
             if [ "$SSL" = "si" ]; then
                 fn_generar_certificado_ssl "nginx"
                 local CERT_DIR="${SSL_DIR}/nginx"
-                cat >> "${NGINX_CONFD}/practica7.conf" <<NGINXREDIR
-    return 301 https://\$host\$request_uri;
+                SSL_LABEL="Si"
+
+                # Pedir puerto HTTPS separado para no chocar con Apache (443)
+                echo ""
+                echo -e "${YELLOW}Ingresa el puerto HTTPS para Nginx (ej: 8443, 9443):${NC}"
+                while true; do
+                    read -r PUERTO_SSL
+                    if [[ "$PUERTO_SSL" =~ ^[0-9]+$ ]] && [ "$PUERTO_SSL" -ge 1 ] && [ "$PUERTO_SSL" -le 65535 ]; then
+                        if ss -tlnp 2>/dev/null | grep -q ":${PUERTO_SSL} "; then
+                            fn_err "Puerto ${PUERTO_SSL} ya esta en uso. Elige otro."
+                        else
+                            fn_ok "Puerto HTTPS ${PUERTO_SSL} disponible."
+                            break
+                        fi
+                    else
+                        fn_err "Puerto invalido."
+                    fi
+                done
+                SSL_LABEL="Si (puerto ${PUERTO_SSL})"
+                PUERTO_SSL_USADO="$PUERTO_SSL"
+
+                cat > "${NGINX_CONFD}/practica7.conf" <<NGINXCONF
+server {
+    listen ${PUERTO};
+    server_name ${DOMINIO};
+    server_tokens off;
+    return 301 https://\$host:${PUERTO_SSL}\$request_uri;
 }
 
 server {
-    listen 443 ssl;
+    listen ${PUERTO_SSL} ssl;
     server_name ${DOMINIO};
     ssl_certificate     ${CERT_DIR}/server.crt;
     ssl_certificate_key ${CERT_DIR}/server.key;
     ssl_protocols TLSv1.2 TLSv1.3;
-    root /usr/share/nginx/html;
+    ssl_prefer_server_ciphers on;
+    root ${NGINX_WEBROOT};
     index index.html;
     server_tokens off;
     add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header X-Content-Type-Options nosniff always;
 }
-NGINXREDIR
+NGINXCONF
+
+                # Abrir puerto SSL en firewall
+                iptables -I INPUT -p tcp --dport "$PUERTO_SSL" -j ACCEPT 2>/dev/null
+
             else
-                echo "}" >> "${NGINX_CONFD}/practica7.conf"
+                cat > "${NGINX_CONFD}/practica7.conf" <<NGINXCONF
+server {
+    listen ${PUERTO};
+    server_name ${DOMINIO};
+    root ${NGINX_WEBROOT};
+    index index.html;
+    server_tokens off;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-XSS-Protection "1; mode=block" always;
+}
+NGINXCONF
             fi
+
+            # Crear pagina HTML
+            cat > "${NGINX_WEBROOT}/index.html" <<HTMLEOF
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Nginx - Activo</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eee;
+               display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: #16213e; padding: 40px 60px; border-radius: 12px;
+                border-left: 6px solid #0f3460; text-align: center; }
+        h1 { color: #e94560; }
+        .badge { display: inline-block; background: #0f3460; padding: 4px 14px;
+                 border-radius: 20px; margin: 4px; font-size: 0.9em; }
+        .status { color: #4ade80; font-weight: bold; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Nginx - Mageia Linux</h1>
+        <div>
+            <span class="badge">Servidor: Nginx</span>
+            <span class="badge">Puerto HTTP: ${PUERTO}</span>
+            <span class="badge">SSL: ${SSL_LABEL}</span>
+        </div>
+        <div>OS: Mageia Linux</div>
+        <div>Dominio: ${DOMINIO}</div>
+        <div class="status">Servidor activo y funcionando</div>
+        <p style="font-size:0.8em;color:#888">Practica 7 - FTP + SSL</p>
+    </div>
+</body>
+</html>
+HTMLEOF
 
             systemctl enable nginx 2>/dev/null
             systemctl restart nginx 2>/dev/null
-            fn_ok "Nginx instalado via urpmi - puerto ${PUERTO}"
-            RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Nginx] Puerto: ${PUERTO} | SSL: ${SSL} | Origen: WEB"
+            fn_ok "Nginx instalado via urpmi - puerto ${PUERTO} | SSL: ${SSL_LABEL}"
+            RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Nginx] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
             ;;
 
         tomcat)
@@ -941,10 +1010,58 @@ NGINXREDIR
                 urpmi --auto --quiet java-11-openjdk 2>/dev/null
             fi
 
-            systemctl enable tomcat 2>/dev/null || systemctl enable tomcat9 2>/dev/null
-            systemctl start  tomcat 2>/dev/null || systemctl start  tomcat9 2>/dev/null
-            fn_ok "Tomcat instalado via urpmi - puerto ${PUERTO}"
-            RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Tomcat] Puerto: ${PUERTO} | SSL: ${SSL} | Origen: WEB"
+            # Detectar nombre del servicio tomcat
+            local TOMCAT_SVC="tomcat"
+            systemctl list-units --type=service 2>/dev/null | grep -q "tomcat9" && TOMCAT_SVC="tomcat9"
+
+            # Detectar directorio de configuracion de tomcat
+            local TOMCAT_CONF=""
+            for DIR in /etc/tomcat /etc/tomcat9 /usr/share/tomcat/conf /usr/share/tomcat9/conf; do
+                [ -f "${DIR}/server.xml" ] && TOMCAT_CONF="$DIR" && break
+            done
+
+            local SSL_LABEL="No"
+
+            if [ -n "$TOMCAT_CONF" ]; then
+                # Cambiar puerto HTTP
+                sed -i "s/port=\"8080\"/port=\"${PUERTO}\"/" "${TOMCAT_CONF}/server.xml" 2>/dev/null
+
+                if [ "$SSL" = "si" ]; then
+                    fn_generar_certificado_ssl "tomcat"
+                    local CERT_DIR="${SSL_DIR}/tomcat"
+
+                    # Pedir puerto HTTPS separado
+                    echo ""
+                    echo -e "${YELLOW}Ingresa el puerto HTTPS para Tomcat (ej: 8444, 9444):${NC}"
+                    local PUERTO_SSL_TC=""
+                    while true; do
+                        read -r PUERTO_SSL_TC
+                        if [[ "$PUERTO_SSL_TC" =~ ^[0-9]+$ ]] && [ "$PUERTO_SSL_TC" -ge 1 ] && [ "$PUERTO_SSL_TC" -le 65535 ]; then
+                            if ss -tlnp 2>/dev/null | grep -q ":${PUERTO_SSL_TC} "; then
+                                fn_err "Puerto ${PUERTO_SSL_TC} ya esta en uso. Elige otro."
+                            else
+                                fn_ok "Puerto HTTPS ${PUERTO_SSL_TC} disponible."
+                                break
+                            fi
+                        else
+                            fn_err "Puerto invalido."
+                        fi
+                    done
+                    SSL_LABEL="Si (puerto ${PUERTO_SSL_TC})"
+                    PUERTO_SSL_USADO="$PUERTO_SSL_TC"
+
+                    sed -i "s|</Service>|    <Connector port=\"${PUERTO_SSL_TC}\" protocol=\"org.apache.coyote.http11.Http11NioProtocol\"\n               SSLEnabled=\"true\" scheme=\"https\" secure=\"true\"\n               keystoreFile=\"${CERT_DIR}/server.crt\"\n               keystorePass=\"practica7\"\n               clientAuth=\"false\" sslProtocol=\"TLS\" />\n</Service>|" \
+                        "${TOMCAT_CONF}/server.xml" 2>/dev/null
+
+                    iptables -I INPUT -p tcp --dport "$PUERTO_SSL_TC" -j ACCEPT 2>/dev/null
+                    fn_sec "SSL configurado en Tomcat puerto ${PUERTO_SSL_TC}"
+                fi
+            fi
+
+            systemctl enable "$TOMCAT_SVC" 2>/dev/null
+            systemctl restart "$TOMCAT_SVC" 2>/dev/null
+            fn_ok "Tomcat instalado via urpmi - puerto ${PUERTO} | SSL: ${SSL_LABEL}"
+            RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Tomcat] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
             ;;
     esac
 }
@@ -957,6 +1074,7 @@ fn_verificar_servicio_http() {
     local NOMBRE="$1"
     local PUERTO="$2"
     local SSL="$3"
+    local PUERTO_SSL="${4:-443}"   # Puerto HTTPS, por defecto 443
 
     echo -e "\n${CYAN}Verificando ${NOMBRE}...${NC}"
 
@@ -979,15 +1097,15 @@ fn_verificar_servicio_http() {
 
     if [ "$SSL" = "si" ]; then
         local RESP_SSL
-        RESP_SSL=$(curl -sk --connect-timeout 5 "https://127.0.0.1:443" -o /dev/null -w "%{http_code}" 2>/dev/null)
+        RESP_SSL=$(curl -sk --connect-timeout 5 "https://127.0.0.1:${PUERTO_SSL}" -o /dev/null -w "%{http_code}" 2>/dev/null)
         if [ "$RESP_SSL" = "200" ] || [ "$RESP_SSL" = "302" ]; then
-            fn_sec "${NOMBRE} responde HTTPS correctamente (codigo: ${RESP_SSL})"
+            fn_sec "${NOMBRE} responde HTTPS correctamente en puerto ${PUERTO_SSL} (codigo: ${RESP_SSL})"
         else
             fn_info "${NOMBRE} HTTPS responde con codigo: ${RESP_SSL}"
         fi
 
         local CERT_INFO
-        CERT_INFO=$(echo | openssl s_client -connect "127.0.0.1:443" \
+        CERT_INFO=$(echo | openssl s_client -connect "127.0.0.1:${PUERTO_SSL}" \
             -servername "${DOMINIO}" 2>/dev/null | \
             openssl x509 -noout -subject -dates 2>/dev/null)
         if [ -n "$CERT_INFO" ]; then
@@ -1074,7 +1192,7 @@ fn_instalar_servicio_hibrido() {
     done
 
     echo ""
-    echo -e "${YELLOW}Ingresa el puerto para ${NOMBRE_DISPLAY} (ej: 8080, 9090, 8083):${NC}"
+    echo -e "${YELLOW}Ingresa el puerto HTTP para ${NOMBRE_DISPLAY} (ej: 8080, 9090, 8083):${NC}"
     local PUERTO=""
     while true; do
         read -r PUERTO
@@ -1093,6 +1211,9 @@ fn_instalar_servicio_hibrido() {
     local SSL="no"
     fn_preguntar_ssl && SSL="si"
 
+    # Variable global para el puerto SSL (se asigna dentro de fn_instalar_web_con_ssl)
+    PUERTO_SSL_USADO="443"
+
     if [ "$ORIGEN" = "1" ]; then
         fn_instalar_web_con_ssl "$SERVICIO" "$PUERTO" "$SSL"
     else
@@ -1106,18 +1227,16 @@ fn_instalar_servicio_hibrido() {
         esac
     fi
 
-    # Firewall: Mageia puede tener firewalld o iptables
+    # Firewall
     if command -v firewall-cmd &>/dev/null; then
         firewall-cmd --permanent --add-port="${PUERTO}/tcp" 2>/dev/null
-        [ "$SSL" = "si" ] && firewall-cmd --permanent --add-port="443/tcp" 2>/dev/null
         firewall-cmd --reload 2>/dev/null
         fn_ok "Firewall (firewalld) configurado para puerto ${PUERTO}"
     elif command -v iptables &>/dev/null; then
         iptables -I INPUT -p tcp --dport "$PUERTO" -j ACCEPT 2>/dev/null
-        [ "$SSL" = "si" ] && iptables -I INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null
         fn_ok "Firewall (iptables) configurado para puerto ${PUERTO}"
     fi
 
     sleep 2
-    fn_verificar_servicio_http "$NOMBRE_DISPLAY" "$PUERTO" "$SSL"
+    fn_verificar_servicio_http "$NOMBRE_DISPLAY" "$PUERTO" "$SSL" "$PUERTO_SSL_USADO"
 }
