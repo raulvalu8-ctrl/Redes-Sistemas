@@ -1026,14 +1026,12 @@ HTMLEOF
                 # Detener tomcat antes de modificar configuracion
                 systemctl stop "$TOMCAT_SVC" 2>/dev/null
 
-                # Cambiar puerto HTTP - reemplaza cualquier puerto en el conector HTTP principal
-                # Busca el Connector con protocol HTTP/1.1 y cambia su puerto
-                sed -i "s|<Connector port=\"[0-9]*\" protocol=\"HTTP/1.1\"|<Connector port=\"${PUERTO}\" protocol=\"HTTP/1.1\"|" \
+                # Cambiar puerto HTTP - cubre todos los patrones posibles de Mageia
+                # Patron 1: con address
+                sed -i "s|Connector port=\"[0-9]*\" address=\"[^\"]*\" protocol=\"HTTP/1.1\"|Connector port=\"${PUERTO}\" address=\"0.0.0.0\" protocol=\"HTTP/1.1\"|" \
                     "${TOMCAT_CONF}/server.xml" 2>/dev/null
-
-                # Fallback: si no encontro el patron anterior, reemplaza 8080 o cualquier puerto comun
-                grep -q "port=\"${PUERTO}\"" "${TOMCAT_CONF}/server.xml" || \
-                    sed -i "s/port=\"[0-9]*\" protocol=\"HTTP/port=\"${PUERTO}\" protocol=\"HTTP/" \
+                # Patron 2: sin address
+                sed -i "s|<Connector port=\"[0-9]*\" protocol=\"HTTP/1.1\"|<Connector port=\"${PUERTO}\" protocol=\"HTTP/1.1\"|" \
                     "${TOMCAT_CONF}/server.xml" 2>/dev/null
 
                 fn_ok "Puerto Tomcat configurado a ${PUERTO}"
@@ -1062,7 +1060,40 @@ HTMLEOF
                     SSL_LABEL="Si (puerto ${PUERTO_SSL_TC})"
                     PUERTO_SSL_USADO="$PUERTO_SSL_TC"
 
-                    sed -i "s|</Service>|    <Connector port=\"${PUERTO_SSL_TC}\" protocol=\"org.apache.coyote.http11.Http11NioProtocol\"\n               SSLEnabled=\"true\" scheme=\"https\" secure=\"true\"\n               keystoreFile=\"${CERT_DIR}/server.crt\"\n               keystorePass=\"practica7\"\n               clientAuth=\"false\" sslProtocol=\"TLS\" />\n</Service>|" \
+                    # Convertir certificado PEM a keystore JKS (formato que necesita Tomcat)
+                    fn_sec "Convirtiendo certificado a formato JKS para Tomcat..."
+
+                    # Instalar keytool si no existe (viene con java)
+                    if ! command -v keytool &>/dev/null; then
+                        urpmi --auto --quiet java-11-openjdk 2>/dev/null
+                    fi
+
+                    # Paso 1: PEM -> PKCS12
+                    openssl pkcs12 -export \
+                        -in "${CERT_DIR}/server.crt" \
+                        -inkey "${CERT_DIR}/server.key" \
+                        -out "${CERT_DIR}/keystore.p12" \
+                        -name tomcat \
+                        -passout pass:practica7 2>/dev/null
+
+                    # Paso 2: PKCS12 -> JKS
+                    keytool -importkeystore \
+                        -srckeystore "${CERT_DIR}/keystore.p12" \
+                        -srcstoretype PKCS12 \
+                        -srcstorepass practica7 \
+                        -destkeystore "${CERT_DIR}/keystore.jks" \
+                        -deststorepass practica7 \
+                        -noprompt 2>/dev/null
+
+                    chmod 640 "${CERT_DIR}/keystore.jks"
+                    fn_sec "Keystore JKS generado: ${CERT_DIR}/keystore.jks"
+
+                    # Eliminar conector SSL previo si existe y agregar el correcto
+                    # Primero limpiar conectores SSL anteriores del practica7
+                    sed -i '/practica7/d' "${TOMCAT_CONF}/server.xml" 2>/dev/null
+
+                    # Agregar conector SSL con keystore JKS
+                    sed -i "s|</Service>|    <Connector port=\"${PUERTO_SSL_TC}\" protocol=\"org.apache.coyote.http11.Http11NioProtocol\"\n               SSLEnabled=\"true\" scheme=\"https\" secure=\"true\"\n               keystoreFile=\"${CERT_DIR}/keystore.jks\"\n               keystorePass=\"practica7\"\n               clientAuth=\"false\" sslProtocol=\"TLS\"\n               maxThreads=\"150\" /><!-- practica7 -->\n</Service>|" \
                         "${TOMCAT_CONF}/server.xml" 2>/dev/null
 
                     iptables -I INPUT -p tcp --dport "$PUERTO_SSL_TC" -j ACCEPT 2>/dev/null
