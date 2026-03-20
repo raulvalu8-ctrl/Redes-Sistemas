@@ -718,9 +718,23 @@ fn_configurar_ftps() {
         urpmi --auto --quiet vsftpd 2>/dev/null
     fi
 
-    # Crear directorio secure_chroot_dir que necesita vsftpd
+    # Detener shorewall si existe (igual que practica 5)
+    systemctl stop shorewall 2>/dev/null
+    shorewall clear 2>/dev/null
+
+    # Crear directorio secure_chroot_dir
     mkdir -p /var/run/vsftpd/empty
     chmod 755 /var/run/vsftpd/empty
+
+    # Asegurar shells validos para vsftpd
+    for shell in "/sbin/nologin" "/bin/false"; do
+        grep -q "$shell" /etc/shells || echo "$shell" >> /etc/shells
+    done
+
+    # Detectar IP del servidor
+    local SERVER_IP
+    SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+    fn_info "IP del servidor: ${SERVER_IP}"
 
     mkdir -p "${SSL_DIR}/vsftpd"
     fn_sec "Generando certificado SSL para vsftpd..."
@@ -729,48 +743,45 @@ fn_configurar_ftps() {
         -newkey rsa:2048 \
         -keyout "${SSL_DIR}/vsftpd/vsftpd.key" \
         -out "${SSL_DIR}/vsftpd/vsftpd.crt" \
-        -subj "/C=MX/ST=Sinaloa/L=Culiacan/O=Reprobados/OU=FTP/CN=${DOMINIO}" \
+        -subj "/C=MX/ST=Sinaloa/L=Culiacan/O=Reprobados/OU=FTP/CN=${SERVER_IP}" \
         2>/dev/null
 
     chmod 600 "${SSL_DIR}/vsftpd/vsftpd.key"
     fn_sec "Certificado FTPS generado."
 
-    # Detectar IP del servidor automaticamente
-    local SERVER_IP
-    SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-    fn_info "IP del servidor detectada: ${SERVER_IP}"
-
-    # En Mageia el vsftpd.conf esta en /etc/vsftpd/vsftpd.conf
+    # Detectar ruta del vsftpd.conf
     local VSFTPD_CONF="/etc/vsftpd/vsftpd.conf"
-    if [ ! -f "$VSFTPD_CONF" ]; then
-        [ -f "/etc/vsftpd.conf" ] && VSFTPD_CONF="/etc/vsftpd.conf"
-    fi
+    [ ! -f "$VSFTPD_CONF" ] && [ -f "/etc/vsftpd.conf" ] && VSFTPD_CONF="/etc/vsftpd.conf"
 
     if [ ! -f "$VSFTPD_CONF" ]; then
-        fn_err "No se encontro vsftpd.conf. Verifica la instalacion de vsftpd."
+        fn_err "No se encontro vsftpd.conf."
         return 1
     fi
 
     fn_info "Usando configuracion en: $VSFTPD_CONF"
 
-    # Limpiar configuraciones previas de practica7
-    sed -i '/^ssl_enable/d' "$VSFTPD_CONF"
-    sed -i '/^rsa_cert_file/d' "$VSFTPD_CONF"
-    sed -i '/^rsa_private_key_file/d' "$VSFTPD_CONF"
-    sed -i '/^ssl_tlsv1/d' "$VSFTPD_CONF"
-    sed -i '/^ssl_sslv2/d' "$VSFTPD_CONF"
-    sed -i '/^ssl_sslv3/d' "$VSFTPD_CONF"
-    sed -i '/^force_local_data_ssl/d' "$VSFTPD_CONF"
-    sed -i '/^force_local_logins_ssl/d' "$VSFTPD_CONF"
-    sed -i '/^require_ssl_reuse/d' "$VSFTPD_CONF"
-    sed -i '/^ssl_ciphers/d' "$VSFTPD_CONF"
-    sed -i '/^pasv_enable/d' "$VSFTPD_CONF"
-    sed -i '/^pasv_min_port/d' "$VSFTPD_CONF"
-    sed -i '/^pasv_max_port/d' "$VSFTPD_CONF"
-    sed -i '/^pasv_address/d' "$VSFTPD_CONF"
-    sed -i '/^secure_chroot_dir/d' "$VSFTPD_CONF"
+    # Escribir configuracion completa (igual que practica 5 + SSL)
+    cat > "$VSFTPD_CONF" <<VSFTPDEOF
+listen=YES
+local_enable=YES
+write_enable=YES
+local_umask=022
+dirmessage_enable=YES
+xferlog_enable=YES
+connect_from_port_20=YES
+chroot_local_user=YES
+allow_writeable_chroot=YES
+pasv_enable=YES
+pasv_min_port=10000
+pasv_max_port=10100
+pasv_address=${SERVER_IP}
+secure_chroot_dir=/var/run/vsftpd/empty
+pam_service_name=vsftpd
+listen_ipv6=NO
+check_shell=NO
 
-    cat >> "$VSFTPD_CONF" <<FTPSEOF
+# Acceso anonimo desactivado
+anonymous_enable=NO
 
 # FTPS - SSL/TLS - Practica 7
 ssl_enable=YES
@@ -783,25 +794,19 @@ force_local_data_ssl=YES
 force_local_logins_ssl=YES
 require_ssl_reuse=NO
 ssl_ciphers=HIGH
-# Modo pasivo para FileZilla
-pasv_enable=YES
-pasv_min_port=40000
-pasv_max_port=40100
-pasv_address=${SERVER_IP}
-# Directorio chroot
-secure_chroot_dir=/var/run/vsftpd/empty
-FTPSEOF
+implicit_ssl=NO
+VSFTPDEOF
 
     # Abrir puertos en firewall
     iptables -I INPUT -p tcp --dport 21 -j ACCEPT 2>/dev/null
     iptables -I INPUT -p tcp --dport 20 -j ACCEPT 2>/dev/null
-    iptables -I INPUT -p tcp --dport 40000:40100 -j ACCEPT 2>/dev/null
-    fn_ok "Firewall configurado para FTP (20,21) y modo pasivo (40000-40100)"
+    iptables -I INPUT -p tcp --dport 10000:10100 -j ACCEPT 2>/dev/null
+    fn_ok "Firewall configurado para FTP (20,21) y modo pasivo (10000-10100)"
 
     systemctl restart vsftpd 2>/dev/null
     if [ $? -eq 0 ]; then
         fn_sec "vsftpd reiniciado con FTPS activado."
-        fn_ok "FTPS configurado correctamente en ${DOMINIO}"
+        fn_ok "FTPS configurado correctamente en ${SERVER_IP}"
     else
         fn_err "No se pudo reiniciar vsftpd. Revisa: systemctl status vsftpd"
     fi
