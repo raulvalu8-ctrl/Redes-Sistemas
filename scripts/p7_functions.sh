@@ -18,7 +18,7 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # -----------------------------------------------------------------------------
-# VARIABLES GLOBALES  <-- SOLO ESTO SE CAMBIO
+# VARIABLES GLOBALES
 # -----------------------------------------------------------------------------
 FTP_SERVER="192.168.107.128"
 FTP_PORT="21"
@@ -71,16 +71,17 @@ fn_verificar_dependencias() {
     for DEP in $DEPS; do
         if ! command -v "$DEP" &>/dev/null; then
             fn_info "Instalando $DEP..."
-            dnf install -y "$DEP" 2>/dev/null || urpmi --auto "$DEP" 2>/dev/null
+            urpmi --auto "$DEP" 2>/dev/null
         fi
     done
     fn_ok "Dependencias verificadas."
 }
 
+# Mageia usa urpmi, no dnf
 fn_instalar_pkg() {
     local paquete="$1"
     fn_info "Instalando $paquete..."
-    dnf install -y "$paquete" 2>/dev/null || urpmi --auto "$paquete" 2>/dev/null
+    urpmi --auto --quiet "$paquete" 2>/dev/null
 }
 
 # -----------------------------------------------------------------------------
@@ -250,7 +251,6 @@ fn_verificar_hash() {
         return 0
     else
         fn_err "FALLO DE INTEGRIDAD. Los hashes no coinciden."
-        fn_err "El archivo puede estar corrompido. Abortando instalacion."
         return 1
     fi
 }
@@ -298,6 +298,8 @@ fn_preguntar_ssl() {
 
 # -----------------------------------------------------------------------------
 # BLOQUE 4: INSTALACION APACHE
+# Mageia: paquete=apache, servicio=httpd, conf=/etc/httpd/conf/httpd.conf
+#         conf.d correcto=/etc/httpd/conf/conf.d/
 # -----------------------------------------------------------------------------
 
 fn_instalar_apache_ftp() {
@@ -307,18 +309,30 @@ fn_instalar_apache_ftp() {
 
     fn_section "Instalacion Apache desde FTP - Mageia 9"
 
-    fn_info "Instalando dependencias..."
     fn_instalar_pkg "apache"
     fn_instalar_pkg "apache-mod_ssl"
     fn_instalar_pkg "apache-mod_headers"
 
     local CONF="/etc/httpd/conf/httpd.conf"
+    local CONF_D="/etc/httpd/conf/conf.d"
+    mkdir -p "$CONF_D"
 
-    for sslf in /etc/httpd/conf/conf.d/ssl.conf /etc/httpd/conf.d/ssl.conf; do
-        [ -f "$sslf" ] && mv "$sslf" "${sslf}.bak" && fn_info "ssl.conf deshabilitado."
+    # Deshabilitar ssl.conf por defecto para evitar conflicto puerto 443
+    for sslf in /etc/httpd/conf/conf.d/ssl.conf /etc/httpd/conf.d/ssl.conf \
+                /etc/httpd/conf/sites.d/00_default_ssl_vhost.conf; do
+        [ -f "$sslf" ] && mv "$sslf" "${sslf}.bak" && fn_info "Deshabilitado: $sslf"
     done
 
-    sed -i "s/^Listen .*/Listen ${PUERTO}/" "$CONF"
+    # Asegurar que mod_ssl y mod_headers esten cargados
+    grep -q 'LoadModule ssl_module' "$CONF" || \
+        echo "LoadModule ssl_module modules/mod_ssl.so" >> "$CONF"
+    grep -q 'LoadModule headers_module' "$CONF" || \
+        echo "LoadModule headers_module modules/mod_headers.so" >> "$CONF"
+    grep -q 'LoadModule socache_shmcb_module' "$CONF" || \
+        echo "LoadModule socache_shmcb_module modules/mod_socache_shmcb.so" >> "$CONF"
+
+    # Configurar puerto (reemplaza cualquier Listen existente)
+    sed -i "s/^Listen.*/Listen ${PUERTO}/" "$CONF"
     sed -i "s/^#\?ServerName.*/ServerName ${DOMINIO}:${PUERTO}/" "$CONF"
 
     cat >> "$CONF" << APACHEEOF
@@ -335,14 +349,15 @@ APACHEEOF
         local CERT_DIR="${SSL_DIR}/apache"
         SSL_LABEL="Si (puerto 443)"
 
-        cat > /etc/httpd/conf.d/ssl_p7.conf << SSLEOF
-Listen 443
+        # Sin Listen 443 porque Mageia ya lo tiene en ssl.conf del sistema
+        cat > "${CONF_D}/ssl_p7.conf" << SSLEOF
 <VirtualHost *:443>
     ServerName ${DOMINIO}
     DocumentRoot "/var/www/html/apache"
     SSLEngine on
     SSLCertificateFile    ${CERT_DIR}/server.crt
     SSLCertificateKeyFile ${CERT_DIR}/server.key
+    SSLProtocol TLSv1.2 TLSv1.3
     Header always set Strict-Transport-Security "max-age=31536000"
     Header always set X-Frame-Options SAMEORIGIN
     Header always set X-Content-Type-Options nosniff
@@ -353,7 +368,7 @@ Listen 443
 </VirtualHost>
 SSLEOF
         fn_sec "SSL configurado en Apache (443 + redireccion desde ${PUERTO})"
-        iptables -A INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null
+        iptables -I INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null
     fi
 
     local WEBROOT="/var/www/html/apache"
@@ -362,13 +377,12 @@ SSLEOF
     VER=$(httpd -v 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
     [ -z "$VER" ] && VER="2.4.x"
     fn_crear_index "Apache" "$VER" "$PUERTO" "$SSL_LABEL" "$WEBROOT"
-    chown -R apache:apache "$WEBROOT"
+    chown -R apache:apache "$WEBROOT" 2>/dev/null
 
-    iptables -A INPUT -p tcp --dport "$PUERTO" -j ACCEPT 2>/dev/null
+    iptables -I INPUT -p tcp --dport "$PUERTO" -j ACCEPT 2>/dev/null
     systemctl enable httpd 2>/dev/null
     systemctl restart httpd
     fn_ok "Apache iniciado en puerto ${PUERTO}."
-
     RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n  [Apache] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: FTP"
 }
 
@@ -376,18 +390,34 @@ fn_instalar_apache_web() {
     local PUERTO="$1"
     local SSL="$2"
 
-    fn_section "Instalacion Apache via DNF - Mageia 9"
+    fn_section "Instalacion Apache via urpmi - Mageia 9"
     fn_instalar_pkg "apache"
     fn_instalar_pkg "apache-mod_ssl"
     fn_instalar_pkg "apache-mod_headers"
 
     local CONF="/etc/httpd/conf/httpd.conf"
+    local CONF_D="/etc/httpd/conf/conf.d"
+    mkdir -p "$CONF_D"
 
-    for sslf in /etc/httpd/conf/conf.d/ssl.conf /etc/httpd/conf.d/ssl.conf; do
+    # Deshabilitar ssl.conf por defecto
+    for sslf in /etc/httpd/conf/conf.d/ssl.conf /etc/httpd/conf.d/ssl.conf \
+                /etc/httpd/conf/sites.d/00_default_ssl_vhost.conf; do
         [ -f "$sslf" ] && mv "$sslf" "${sslf}.bak" 2>/dev/null
     done
 
-    sed -i "s/^Listen .*/Listen ${PUERTO}/" "$CONF"
+    # Limpiar conf previa de practica7
+    rm -f "${CONF_D}/ssl_p7.conf" 2>/dev/null
+
+    # Asegurar modulos
+    grep -q 'LoadModule ssl_module' "$CONF" || \
+        echo "LoadModule ssl_module modules/mod_ssl.so" >> "$CONF"
+    grep -q 'LoadModule headers_module' "$CONF" || \
+        echo "LoadModule headers_module modules/mod_headers.so" >> "$CONF"
+    grep -q 'LoadModule socache_shmcb_module' "$CONF" || \
+        echo "LoadModule socache_shmcb_module modules/mod_socache_shmcb.so" >> "$CONF"
+
+    # Configurar puerto
+    sed -i "s/^Listen.*/Listen ${PUERTO}/" "$CONF"
     sed -i "s/^#\?ServerName.*/ServerName ${DOMINIO}:${PUERTO}/" "$CONF"
 
     cat >> "$CONF" << APACHEEOF
@@ -404,22 +434,24 @@ APACHEEOF
         local CERT_DIR="${SSL_DIR}/apache"
         SSL_LABEL="Si (puerto 443)"
 
-        cat > /etc/httpd/conf.d/ssl_p7.conf << SSLEOF
-Listen 443
+        cat > "${CONF_D}/ssl_p7.conf" << SSLEOF
 <VirtualHost *:443>
     ServerName ${DOMINIO}
     DocumentRoot "/var/www/html/apache"
     SSLEngine on
     SSLCertificateFile    ${CERT_DIR}/server.crt
     SSLCertificateKeyFile ${CERT_DIR}/server.key
+    SSLProtocol TLSv1.2 TLSv1.3
     Header always set Strict-Transport-Security "max-age=31536000"
+    Header always set X-Frame-Options SAMEORIGIN
+    Header always set X-Content-Type-Options nosniff
 </VirtualHost>
 <VirtualHost *:${PUERTO}>
     ServerName ${DOMINIO}
     Redirect permanent / https://${DOMINIO}/
 </VirtualHost>
 SSLEOF
-        iptables -A INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null
+        iptables -I INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null
     fi
 
     local WEBROOT="/var/www/html/apache"
@@ -428,17 +460,18 @@ SSLEOF
     VER=$(httpd -v 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
     [ -z "$VER" ] && VER="2.4.x"
     fn_crear_index "Apache" "$VER" "$PUERTO" "$SSL_LABEL" "$WEBROOT"
-    chown -R apache:apache "$WEBROOT"
+    chown -R apache:apache "$WEBROOT" 2>/dev/null
 
-    iptables -A INPUT -p tcp --dport "$PUERTO" -j ACCEPT 2>/dev/null
+    iptables -I INPUT -p tcp --dport "$PUERTO" -j ACCEPT 2>/dev/null
     systemctl enable httpd 2>/dev/null
     systemctl restart httpd
-    fn_ok "Apache instalado via DNF en puerto ${PUERTO}."
+    fn_ok "Apache instalado via urpmi en puerto ${PUERTO}."
     RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n  [Apache] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
 }
 
 # -----------------------------------------------------------------------------
 # BLOQUE 5: INSTALACION NGINX
+# Mageia: paquete=nginx, conf.d=/etc/nginx/conf.d/
 # -----------------------------------------------------------------------------
 
 fn_instalar_nginx_ftp() {
@@ -449,7 +482,7 @@ fn_instalar_nginx_ftp() {
     fn_section "Instalacion Nginx desde FTP - Mageia 9"
 
     fn_info "Instalando dependencias de compilacion..."
-    for pkg in gcc make pcre-dev openssl-dev zlib-dev; do
+    for pkg in gcc make libpcre-devel libopenssl-devel zlib-devel; do
         fn_instalar_pkg "$pkg"
     done
 
@@ -511,21 +544,23 @@ fn_instalar_nginx_web() {
     local PUERTO="$1"
     local SSL="$2"
 
-    fn_section "Instalacion Nginx via DNF - Mageia 9"
+    fn_section "Instalacion Nginx via urpmi - Mageia 9"
     fn_instalar_pkg "nginx"
 
     local VER
     VER=$(nginx -v 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
     [ -z "$VER" ] && VER="desconocida"
 
-    fn_configurar_nginx "/etc/nginx" "$PUERTO" "$SSL" "$VER"
-
+    # Eliminar default para evitar conflicto de puertos
+    rm -f /etc/nginx/conf.d/default.conf 2>/dev/null
     [ -f /etc/nginx/conf.d/default.conf ] && \
         mv /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/default.conf.bak 2>/dev/null
 
+    fn_configurar_nginx "/etc/nginx" "$PUERTO" "$SSL" "$VER"
+
     systemctl enable nginx 2>/dev/null
     systemctl restart nginx
-    fn_ok "Nginx instalado via DNF en puerto ${PUERTO}."
+    fn_ok "Nginx instalado via urpmi en puerto ${PUERTO}."
 
     local SSL_LABEL="No"
     [ "$SSL" = "si" ] && SSL_LABEL="Si (puerto 443)"
@@ -540,8 +575,10 @@ fn_configurar_nginx() {
 
     local WEBROOT="/var/www/nginx"
     mkdir -p "$WEBROOT"
-    local CONF_DIR="$NGINX_BASE/conf"
-    [ -d "$NGINX_BASE/conf.d" ] && CONF_DIR="$NGINX_BASE/conf.d"
+
+    # Determinar directorio de configuracion correcto en Mageia
+    local CONF_DIR="${NGINX_BASE}/conf.d"
+    mkdir -p "$CONF_DIR"
 
     local SSL_LABEL="No"
     local SSL_BLOCK=""
@@ -563,7 +600,7 @@ server {
     index index.html;
     server_tokens off;
 }"
-        iptables -A INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null
+        iptables -I INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null
     fi
 
     cat > "${CONF_DIR}/practica7.conf" << NGINXEOF
@@ -583,11 +620,12 @@ NGINXEOF
 
     fn_crear_index "Nginx" "$VER" "$PUERTO" "$SSL_LABEL" "$WEBROOT"
     chown -R nginx:nginx "$WEBROOT" 2>/dev/null || true
-    iptables -A INPUT -p tcp --dport "$PUERTO" -j ACCEPT 2>/dev/null
+    iptables -I INPUT -p tcp --dport "$PUERTO" -j ACCEPT 2>/dev/null
 }
 
 # -----------------------------------------------------------------------------
 # BLOQUE 6: INSTALACION TOMCAT
+# Mageia: genera server.xml limpio para evitar corrupcion
 # -----------------------------------------------------------------------------
 
 fn_instalar_tomcat_ftp() {
@@ -598,12 +636,12 @@ fn_instalar_tomcat_ftp() {
     fn_section "Instalacion Tomcat desde FTP - Mageia 9"
 
     if ! command -v java &>/dev/null; then
-        fn_info "Instalando Java OpenJDK..."
         fn_instalar_pkg "java-11-openjdk"
     fi
     fn_ok "Java: $(java -version 2>&1 | head -1)"
 
     local TOMCAT_BASE="/opt/tomcat_p7"
+    rm -rf "$TOMCAT_BASE" 2>/dev/null
     mkdir -p "$TOMCAT_BASE"
     fn_info "Extrayendo ${ARCHIVO}..."
     tar -xzf "$ARCHIVO" -C "$TOMCAT_BASE" --strip-components=1 2>/dev/null
@@ -615,39 +653,122 @@ fn_instalar_tomcat_ftp() {
     fn_ok "Tomcat extraido en ${TOMCAT_BASE}"
 
     fn_configurar_tomcat "$TOMCAT_BASE" "$PUERTO" "$SSL"
-    RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n  [Tomcat] Puerto: ${PUERTO} | SSL: $([ "$SSL" = "si" ] && echo "Si (443)" || echo "No") | Origen: FTP"
+    local SSL_LABEL="No"
+    [ "$SSL" = "si" ] && SSL_LABEL="Si (443)"
+    RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n  [Tomcat] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: FTP"
 }
 
 fn_instalar_tomcat_web() {
     local PUERTO="$1"
     local SSL="$2"
 
-    fn_section "Instalacion Tomcat via DNF - Mageia 9"
+    fn_section "Instalacion Tomcat via urpmi - Mageia 9"
     fn_instalar_pkg "tomcat"
 
-    local SVC_FILE="/usr/lib/systemd/system/tomcat.service"
-    [ -f "$SVC_FILE" ] && sed -i 's/^User=tomcat/User=root/' "$SVC_FILE"
+    # Detectar nombre del servicio
+    local TOMCAT_SVC="tomcat"
+    systemctl list-units --type=service 2>/dev/null | grep -q "tomcat9" && TOMCAT_SVC="tomcat9"
 
-    for xmlf in "/etc/tomcat/server.xml" "/usr/share/tomcat/conf/server.xml"; do
-        [ -f "$xmlf" ] && \
-            sed -i "s|Connector port=\"[0-9]*\" address=\"[^\"]*\" protocol=\"HTTP/1.1\"|Connector port=\"${PUERTO}\" address=\"0.0.0.0\" protocol=\"HTTP/1.1\"|g" "$xmlf" && \
-            sed -i "s|Connector port=\"[0-9]*\" protocol=\"HTTP/1.1\"|Connector port=\"${PUERTO}\" address=\"0.0.0.0\" protocol=\"HTTP/1.1\"|g" "$xmlf"
+    # Detectar directorio de configuracion
+    local TOMCAT_CONF=""
+    for DIR in /etc/tomcat /etc/tomcat9; do
+        [ -f "${DIR}/server.xml" ] && TOMCAT_CONF="$DIR" && break
     done
 
-    local VER
-    VER=$(rpm -q tomcat 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-    [ -z "$VER" ] && VER="9.x"
+    if [ -n "$TOMCAT_CONF" ]; then
+        systemctl stop "$TOMCAT_SVC" 2>/dev/null
+
+        local SSL_LABEL="No"
+        local PUERTO_SSL="8443"
+        local CERT_DIR="${SSL_DIR}/tomcat"
+
+        if [ "$SSL" = "si" ]; then
+            fn_generar_certificado_ssl "tomcat"
+            SSL_LABEL="Si (443)"
+
+            # Generar keystore JKS
+            if ! command -v keytool &>/dev/null; then
+                fn_instalar_pkg "java-11-openjdk"
+            fi
+            openssl pkcs12 -export \
+                -in "${CERT_DIR}/server.crt" \
+                -inkey "${CERT_DIR}/server.key" \
+                -out "${CERT_DIR}/keystore.p12" \
+                -name tomcat -passout pass:practica7 2>/dev/null
+            keytool -importkeystore \
+                -srckeystore "${CERT_DIR}/keystore.p12" \
+                -srcstoretype PKCS12 -srcstorepass practica7 \
+                -destkeystore "${CERT_DIR}/keystore.jks" \
+                -deststorepass practica7 -noprompt 2>/dev/null
+            chmod 640 "${CERT_DIR}/keystore.jks"
+            PUERTO_SSL="443"
+            iptables -I INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null
+        fi
+
+        # Generar server.xml limpio
+        cat > "${TOMCAT_CONF}/server.xml" << SERVERXML
+<?xml version="1.0" encoding="UTF-8"?>
+<Server port="8005" shutdown="SHUTDOWN">
+  <Listener className="org.apache.catalina.startup.VersionLoggerListener" />
+  <Listener className="org.apache.catalina.core.AprLifecycleListener" SSLEngine="off" />
+  <Listener className="org.apache.catalina.core.JreMemoryLeakPreventionListener" />
+  <Listener className="org.apache.catalina.mbeans.GlobalResourcesLifecycleListener" />
+  <Listener className="org.apache.catalina.core.ThreadLocalLeakPreventionListener" />
+  <GlobalNamingResources>
+    <Resource name="UserDatabase" auth="Container"
+              type="org.apache.catalina.UserDatabase"
+              description="User database"
+              factory="org.apache.catalina.users.MemoryUserDatabaseFactory"
+              pathname="conf/tomcat-users.xml" />
+  </GlobalNamingResources>
+  <Service name="Catalina">
+    <Connector port="${PUERTO}" address="0.0.0.0" protocol="HTTP/1.1"
+               connectionTimeout="20000" redirectPort="${PUERTO_SSL}" />
+$([ "$SSL" = "si" ] && cat << SSLCONN
+    <Connector port="${PUERTO_SSL}" protocol="HTTP/1.1"
+               SSLEnabled="true" scheme="https" secure="true"
+               keystoreFile="${CERT_DIR}/keystore.jks"
+               keystorePass="practica7"
+               clientAuth="false" sslProtocol="TLS"
+               maxThreads="150" />
+SSLCONN
+)
+    <Engine name="Catalina" defaultHost="localhost">
+      <Realm className="org.apache.catalina.realm.LockOutRealm">
+        <Realm className="org.apache.catalina.realm.UserDatabaseRealm"
+               resourceName="UserDatabase"/>
+      </Realm>
+      <Host name="localhost" appBase="webapps"
+            unpackWARs="true" autoDeploy="true">
+        <Valve className="org.apache.catalina.valves.AccessLogValve"
+               directory="logs" prefix="localhost_access_log"
+               suffix=".txt" pattern="%h %l %u %t &quot;%r&quot; %s %b" />
+      </Host>
+    </Engine>
+  </Service>
+</Server>
+SERVERXML
+
+        local VER
+        VER=$(rpm -q tomcat 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        [ -z "$VER" ] && VER="9.x"
+
+        # Crear pagina en webroot de tomcat
+        local WEBROOT="/var/lib/tomcat/webapps/ROOT"
+        [ -d "/var/lib/tomcat9/webapps/ROOT" ] && WEBROOT="/var/lib/tomcat9/webapps/ROOT"
+        fn_crear_index "Tomcat" "$VER" "$PUERTO" "$SSL_LABEL" "$WEBROOT"
+
+        iptables -I INPUT -p tcp --dport "$PUERTO" -j ACCEPT 2>/dev/null
+        systemctl daemon-reload
+        systemctl enable "$TOMCAT_SVC" 2>/dev/null
+        systemctl restart "$TOMCAT_SVC"
+        fn_ok "Tomcat instalado via urpmi en puerto ${PUERTO}."
+    else
+        fn_err "No se encontro server.xml de Tomcat."
+    fi
 
     local SSL_LABEL="No"
     [ "$SSL" = "si" ] && SSL_LABEL="Si (443)"
-
-    fn_crear_index "Tomcat" "$VER" "$PUERTO" "$SSL_LABEL" "/var/lib/tomcat/webapps/ROOT"
-
-    iptables -A INPUT -p tcp --dport "$PUERTO" -j ACCEPT 2>/dev/null
-    systemctl daemon-reload
-    systemctl enable tomcat 2>/dev/null
-    systemctl restart tomcat
-    fn_ok "Tomcat instalado via DNF en puerto ${PUERTO}."
     RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n  [Tomcat] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
 }
 
@@ -656,16 +777,79 @@ fn_configurar_tomcat() {
     local PUERTO="$2"
     local SSL="$3"
 
-    sed -i "s/port=\"8080\"/port=\"${PUERTO}\"/" "${TOMCAT_BASE}/conf/server.xml"
-    fn_ok "Puerto Tomcat: ${PUERTO}"
-
     local SSL_LABEL="No"
+    local PUERTO_SSL="8443"
+    local CERT_DIR="${SSL_DIR}/tomcat"
+
     if [ "$SSL" = "si" ]; then
         fn_generar_certificado_ssl "tomcat"
         SSL_LABEL="Si (443)"
-        iptables -A INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null
+        PUERTO_SSL="443"
+
+        # Generar keystore JKS
+        if ! command -v keytool &>/dev/null; then
+            fn_instalar_pkg "java-11-openjdk"
+        fi
+        openssl pkcs12 -export \
+            -in "${CERT_DIR}/server.crt" \
+            -inkey "${CERT_DIR}/server.key" \
+            -out "${CERT_DIR}/keystore.p12" \
+            -name tomcat -passout pass:practica7 2>/dev/null
+        keytool -importkeystore \
+            -srckeystore "${CERT_DIR}/keystore.p12" \
+            -srcstoretype PKCS12 -srcstorepass practica7 \
+            -destkeystore "${CERT_DIR}/keystore.jks" \
+            -deststorepass practica7 -noprompt 2>/dev/null
+        chmod 640 "${CERT_DIR}/keystore.jks"
+        iptables -I INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null
         fn_sec "SSL configurado en Tomcat puerto 443"
     fi
+
+    # Generar server.xml limpio (evita corrupcion por multiples sed)
+    cat > "${TOMCAT_BASE}/conf/server.xml" << SERVERXML
+<?xml version="1.0" encoding="UTF-8"?>
+<Server port="8005" shutdown="SHUTDOWN">
+  <Listener className="org.apache.catalina.startup.VersionLoggerListener" />
+  <Listener className="org.apache.catalina.core.AprLifecycleListener" SSLEngine="off" />
+  <Listener className="org.apache.catalina.core.JreMemoryLeakPreventionListener" />
+  <Listener className="org.apache.catalina.mbeans.GlobalResourcesLifecycleListener" />
+  <Listener className="org.apache.catalina.core.ThreadLocalLeakPreventionListener" />
+  <GlobalNamingResources>
+    <Resource name="UserDatabase" auth="Container"
+              type="org.apache.catalina.UserDatabase"
+              description="User database"
+              factory="org.apache.catalina.users.MemoryUserDatabaseFactory"
+              pathname="conf/tomcat-users.xml" />
+  </GlobalNamingResources>
+  <Service name="Catalina">
+    <Connector port="${PUERTO}" address="0.0.0.0" protocol="HTTP/1.1"
+               connectionTimeout="20000" redirectPort="${PUERTO_SSL}" />
+$([ "$SSL" = "si" ] && cat << SSLCONN
+    <Connector port="${PUERTO_SSL}" protocol="HTTP/1.1"
+               SSLEnabled="true" scheme="https" secure="true"
+               keystoreFile="${CERT_DIR}/keystore.jks"
+               keystorePass="practica7"
+               clientAuth="false" sslProtocol="TLS"
+               maxThreads="150" />
+SSLCONN
+)
+    <Engine name="Catalina" defaultHost="localhost">
+      <Realm className="org.apache.catalina.realm.LockOutRealm">
+        <Realm className="org.apache.catalina.realm.UserDatabaseRealm"
+               resourceName="UserDatabase"/>
+      </Realm>
+      <Host name="localhost" appBase="webapps"
+            unpackWARs="true" autoDeploy="true">
+        <Valve className="org.apache.catalina.valves.AccessLogValve"
+               directory="logs" prefix="localhost_access_log"
+               suffix=".txt" pattern="%h %l %u %t &quot;%r&quot; %s %b" />
+      </Host>
+    </Engine>
+  </Service>
+</Server>
+SERVERXML
+
+    fn_ok "server.xml generado con puerto ${PUERTO}"
 
     if ! id tomcat &>/dev/null; then
         useradd -r -s /sbin/nologin -d "$TOMCAT_BASE" tomcat 2>/dev/null
@@ -673,10 +857,7 @@ fn_configurar_tomcat() {
     chown -R tomcat:tomcat "$TOMCAT_BASE"
     chmod +x "${TOMCAT_BASE}/bin/"*.sh
 
-    local VER
-    VER=$(find "$TOMCAT_BASE" -name "catalina.jar" 2>/dev/null | head -1 | xargs -I{} unzip -p {} META-INF/MANIFEST.MF 2>/dev/null | grep "Implementation-Version" | awk -F': ' '{print $2}' | tr -d '\r')
-    [ -z "$VER" ] && VER="9.x"
-
+    local VER="9.x"
     fn_crear_index "Tomcat" "$VER" "$PUERTO" "$SSL_LABEL" "${TOMCAT_BASE}/webapps/ROOT"
 
     local JAVA_HOME
@@ -703,22 +884,21 @@ SVCEOF
 }
 
 # -----------------------------------------------------------------------------
-# BLOQUE 7: FTPS (SSL en vsftpd)
+# BLOQUE 7: FTPS - Configuracion que funciona con vsftpd 3.0.5 Mageia
 # -----------------------------------------------------------------------------
 
 fn_configurar_ftps() {
     fn_section "Configuracion FTPS - vsftpd - Mageia 9"
 
     if ! command -v vsftpd &>/dev/null; then
-        fn_info "Instalando vsftpd..."
         fn_instalar_pkg "vsftpd"
     fi
 
-    # Detener shorewall si existe
+    # Detener shorewall (igual que practica 5)
     systemctl stop shorewall 2>/dev/null
     shorewall clear 2>/dev/null
 
-    # Crear directorio chroot
+    # Crear directorio chroot requerido por vsftpd
     mkdir -p /var/run/vsftpd/empty
     chmod 755 /var/run/vsftpd/empty
 
@@ -727,7 +907,7 @@ fn_configurar_ftps() {
         grep -q "$shell" /etc/shells || echo "$shell" >> /etc/shells
     done
 
-    # Detectar IP
+    # Detectar IP del servidor
     local SERVER_IP
     SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
     fn_info "IP del servidor: ${SERVER_IP}"
@@ -735,6 +915,7 @@ fn_configurar_ftps() {
     mkdir -p "${SSL_DIR}/vsftpd"
     fn_sec "Generando certificado SSL para vsftpd..."
 
+    # Certificado compatible con vsftpd 3.0.5
     openssl req -x509 -nodes -days 365 \
         -newkey rsa:2048 \
         -keyout "${SSL_DIR}/vsftpd/vsftpd.key" \
@@ -742,18 +923,19 @@ fn_configurar_ftps() {
         -subj "/C=MX/ST=Sinaloa/L=Los_Mochis/O=Reprobados/OU=FTP/CN=${SERVER_IP}" \
         -sha256 2>/dev/null
 
+    # Combinar en .pem
     cat "${SSL_DIR}/vsftpd/vsftpd.key" "${SSL_DIR}/vsftpd/vsftpd.crt" \
         > "${SSL_DIR}/vsftpd/vsftpd.pem"
     chmod 600 "${SSL_DIR}/vsftpd/vsftpd.key"
     chmod 600 "${SSL_DIR}/vsftpd/vsftpd.pem"
     fn_sec "Certificado FTPS generado."
 
+    # Detectar vsftpd.conf
     local VSFTPD_CONF="/etc/vsftpd/vsftpd.conf"
     [ ! -f "$VSFTPD_CONF" ] && VSFTPD_CONF="/etc/vsftpd.conf"
-
     fn_info "Usando configuracion en: $VSFTPD_CONF"
 
-    # Escribir configuracion completa
+    # Escribir configuracion completa (basada en practica 5 que funciono)
     cat > "$VSFTPD_CONF" << VSFTPDEOF
 listen=YES
 local_enable=YES
@@ -786,16 +968,22 @@ force_local_logins_ssl=YES
 require_ssl_reuse=NO
 ssl_ciphers=ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:AES256-SHA:AES128-SHA
 implicit_ssl=NO
-debug_ssl=YES
 VSFTPDEOF
 
-    iptables -A INPUT -p tcp --dport 21 -j ACCEPT 2>/dev/null
-    iptables -A INPUT -p tcp --dport 20 -j ACCEPT 2>/dev/null
-    iptables -A INPUT -p tcp --dport 10000:10100 -j ACCEPT 2>/dev/null
-    fn_ok "Firewall configurado para FTP y modo pasivo (10000-10100)"
+    # Abrir puertos
+    iptables -I INPUT -p tcp --dport 21 -j ACCEPT 2>/dev/null
+    iptables -I INPUT -p tcp --dport 20 -j ACCEPT 2>/dev/null
+    iptables -I INPUT -p tcp --dport 10000:10100 -j ACCEPT 2>/dev/null
+    fn_ok "Firewall configurado para FTP (20,21) y pasivo (10000-10100)"
 
     systemctl restart vsftpd
-    fn_ok "FTPS activado en vsftpd."
+    if [ $? -eq 0 ]; then
+        fn_sec "vsftpd reiniciado con FTPS activado."
+        fn_ok "FTPS configurado correctamente."
+    else
+        fn_err "No se pudo reiniciar vsftpd. Revisa: systemctl status vsftpd"
+    fi
+
     RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n  [vsftpd] FTPS activado | Cert: ${SSL_DIR}/vsftpd/vsftpd.pem"
 }
 
@@ -856,7 +1044,7 @@ fn_instalar_servicio_hibrido() {
     echo ""
     echo -e "${CYAN}+-------------------------------+"
     echo -e "| Origen de instalacion:        |"
-    echo -e "| 1) WEB (DNF/repositorio)      |"
+    echo -e "| 1) WEB (urpmi/repositorio)    |"
     echo -e "| 2) FTP (repositorio privado)  |"
     echo -e "+-------------------------------+${NC}"
     echo ""
