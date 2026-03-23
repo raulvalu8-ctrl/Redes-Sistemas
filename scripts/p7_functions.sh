@@ -823,10 +823,16 @@ VSFTPDEOF
     mkdir -p /http/Linux/nginx
     mkdir -p /http/Linux/tomcat
     
-    # Crear archivos "descargables" de prueba
-    echo "Instalador Apache v2.4" > /http/Linux/apache/httpd-2.4.59.tar.gz
-    echo "Instalador Nginx v1.24" > /http/Linux/nginx/nginx-1.24.0.tar.gz
-    echo "Instalador Tomcat v9.0" > /http/Linux/tomcat/apache-tomcat-9.0.87.tar.gz
+    # Crear archivos "descargables" solicitados (.exe para el usuario, .zip para el script)
+    echo "Instalador Apache Windows" > /http/Linux/apache/apache.exe
+    echo "Instalador Apache Zip" > /http/Linux/apache/httpd-2.4.59-win64.zip
+    
+    echo "Instalador Nginx Windows" > /http/Linux/nginx/nginx.exe
+    echo "Instalador Nginx Zip" > /http/Linux/nginx/nginx-1.24.0.zip
+    
+    echo "Instalador Tomcat Windows" > /http/Linux/tomcat/tomcat.exe
+    echo "Instalador Tomcat Zip" > /http/Linux/tomcat/apache-tomcat-9.0.87-windows-x64.zip
+    
     echo "Servidor FTP Mageia - Archivos listos" > /http/Linux/info.txt
     
     # Permisos para u1 y anonimo
