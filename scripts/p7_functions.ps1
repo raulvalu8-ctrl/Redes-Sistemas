@@ -687,8 +687,29 @@ function fn_configurar_ftps {
     
     Import-Module WebAdministration -ErrorAction SilentlyContinue
     
-    $sitePath = "C:\inetpub\ftproot"
+    $sitePath = "C:\inetpub\ftproot\pkg\Linux"
     if (!(Test-Path $sitePath)) { New-Item -ItemType Directory -Force -Path $sitePath | Out-Null }
+    
+    # Replicar estructura de Linux en Windows FTPS
+    fn_info "Replicando estructura de carpetas /pkg/Linux en IIS..."
+    $folders = @("apache", "nginx", "tomcat")
+    foreach($f in $folders) {
+        $folderPath = Join-Path $sitePath $f
+        if (!(Test-Path $folderPath)) { New-Item -ItemType Directory -Path $folderPath -Force | Out-Null }
+        
+        # Crear archivos ejecutables y zips de prueba
+        $exeName = "$f.exe"
+        $zipName = switch($f) {
+            "apache" { "httpd-2.4.59-win64.zip" }
+            "nginx"  { "nginx-1.24.0.zip" }
+            "tomcat" { "apache-tomcat-9.0.87-windows-x64.zip" }
+        }
+        
+        "Instalador $f Windows Server" | Out-File (Join-Path $folderPath $exeName) -Force
+        "Instalador $f Zip Server" | Out-File (Join-Path $folderPath $zipName) -Force
+    }
+    "Servidor FTP Windows Server - Archivos listos" | Out-File (Join-Path $sitePath "info.txt") -Force
+    fn_ok "Estructura de directorios en IIS creada y poblada."
     
     $siteName = "IIS_P7_FTP"
     if (!(Get-Website -Name $siteName -ErrorAction SilentlyContinue)) {
