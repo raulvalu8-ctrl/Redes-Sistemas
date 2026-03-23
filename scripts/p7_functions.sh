@@ -791,15 +791,19 @@ anonymous_enable=NO
 # FTPS - SSL/TLS - Practica 7
 ssl_enable=YES
 rsa_cert_file=${SSL_DIR}/vsftpd/vsftpd.pem
-rsa_private_key_file=${SSL_DIR}/vsftpd/vsftpd.key
+rsa_private_key_file=${SSL_DIR}/vsftpd/vsftpd.pem
 ssl_tlsv1=YES
+ssl_tlsv1_1=YES
+ssl_tlsv1_2=YES
+ssl_tlsv1_3=YES
 ssl_sslv2=NO
 ssl_sslv3=NO
 force_local_data_ssl=YES
 force_local_logins_ssl=YES
 require_ssl_reuse=NO
-ssl_ciphers=ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:AES256-SHA:AES128-SHA
+ssl_ciphers=HIGH
 implicit_ssl=NO
+seccomp_sandbox=NO
 debug_ssl=YES
 VSFTPDEOF
 
