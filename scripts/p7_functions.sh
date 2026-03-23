@@ -785,13 +785,16 @@ pam_service_name=vsftpd
 listen_ipv6=NO
 check_shell=NO
 
-# Acceso anonimo desactivado
-anonymous_enable=NO
+# Acceso anonimo activado
+anonymous_enable=YES
+no_anon_password=YES
+anon_root=/var/ftp
+allow_anon_ssl=YES
 
 # FTPS - SSL/TLS - Practica 7
 ssl_enable=YES
-rsa_cert_file=${SSL_DIR}/vsftpd/vsftpd.pem
-rsa_private_key_file=${SSL_DIR}/vsftpd/vsftpd.pem
+rsa_cert_file=${SSL_DIR}/vsftpd/vsftpd.crt
+rsa_private_key_file=${SSL_DIR}/vsftpd/vsftpd.key
 ssl_tlsv1=YES
 ssl_tlsv1_1=YES
 ssl_tlsv1_2=YES
@@ -801,11 +804,16 @@ ssl_sslv3=NO
 force_local_data_ssl=YES
 force_local_logins_ssl=YES
 require_ssl_reuse=NO
-ssl_ciphers=HIGH
+ssl_ciphers=DEFAULT
 implicit_ssl=NO
 seccomp_sandbox=NO
 debug_ssl=YES
 VSFTPDEOF
+
+    # Crear directorio para anonimo si no existe
+    mkdir -p /var/ftp/pub
+    chmod 755 /var/ftp
+    chmod 777 /var/ftp/pub
 
     # Abrir puertos en firewall
     iptables -I INPUT -p tcp --dport 21 -j ACCEPT 2>/dev/null
