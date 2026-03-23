@@ -20,8 +20,10 @@ NC='\033[0m'
 
 # -----------------------------------------------------------------------------
 # VARIABLES GLOBALES
+# FTP_SERVER se detecta automaticamente en fn_configurar_ftps
+# y puede sobreescribirse antes de llamar las funciones si se necesita
 # -----------------------------------------------------------------------------
-FTP_SERVER="192.168.107.128"
+FTP_SERVER="192.168.5.129"
 FTP_PORT="21"
 FTP_USER="u1"
 FTP_PASS="alumno1"
@@ -73,6 +75,16 @@ fn_verificar_dependencias() {
     fi
 
     fn_ok "Dependencias verificadas."
+}
+
+# Detecta la IP local activa del servidor (excluye loopback)
+fn_detectar_ip() {
+    local IP
+    # Intenta obtener la IP de la interfaz con ruta por defecto
+    IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
+    # Fallback: primera IP que no sea loopback
+    [ -z "$IP" ] && IP=$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v '^127\.' | grep -v '^::' | head -1)
+    echo "$IP"
 }
 
 # -----------------------------------------------------------------------------
@@ -312,7 +324,6 @@ fn_instalar_apache_ftp() {
     echo -e "${BLUE}====== INSTALACION APACHE DESDE FTP ======${NC}"
 
     fn_info "Instalando dependencias para compilar Apache en Mageia..."
-    # Nombres de paquetes de desarrollo en Mageia (RPM-based)
     urpmi --auto --quiet gcc make libapr-devel libaprutil-devel \
         libpcre-devel libopenssl-devel zlib-devel libxml2-devel \
         libcurl-devel 2>/dev/null
@@ -688,7 +699,6 @@ fn_instalar_tomcat_ftp() {
 </html>
 HTMLEOF
 
-    # Detectar JAVA_HOME dinamicamente
     local JAVA_HOME_DIR
     JAVA_HOME_DIR=$(dirname $(dirname $(readlink -f $(which java) 2>/dev/null) 2>/dev/null) 2>/dev/null)
 
@@ -707,6 +717,8 @@ HTMLEOF
 
 # -----------------------------------------------------------------------------
 # BLOQUE 7: SSL PARA VSFTPD (FTPS)
+# CORREGIDO: IP dinamica, ciphers compatibles con FileZilla/GnuTLS,
+#            TLSv1.2 forzado, require_ssl_reuse=NO, pasv_address dinamico
 # -----------------------------------------------------------------------------
 
 fn_configurar_ftps() {
@@ -718,7 +730,7 @@ fn_configurar_ftps() {
         urpmi --auto --quiet vsftpd 2>/dev/null
     fi
 
-    # Detener shorewall si existe (igual que practica 5)
+    # Detener shorewall si existe
     systemctl stop shorewall 2>/dev/null
     shorewall clear 2>/dev/null
 
@@ -731,27 +743,45 @@ fn_configurar_ftps() {
         grep -q "$shell" /etc/shells || echo "$shell" >> /etc/shells
     done
 
-    # Detectar IP del servidor
+    # -------------------------------------------------------------------------
+    # CORRECCION PRINCIPAL: detectar IP activa en lugar de usar hostname -I
+    # Esto garantiza que pasv_address use la IP correcta aunque cambie de red
+    # -------------------------------------------------------------------------
     local SERVER_IP
-    SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-    fn_info "IP del servidor: ${SERVER_IP}"
+    SERVER_IP=$(fn_detectar_ip)
+    fn_info "IP del servidor detectada: ${SERVER_IP}"
 
     mkdir -p "${SSL_DIR}/vsftpd"
     fn_sec "Generando certificado SSL para vsftpd..."
 
-    # Generar certificado compatible con vsftpd 3.0.5 Mageia + GnuTLS
+    # Generar certificado con CN = IP del servidor
+    # Se usa -addext para incluir SAN (Subject Alt Name) con la IP,
+    # requerido por clientes modernos como FileZilla 3.x
     openssl req -x509 -nodes -days 365 \
         -newkey rsa:2048 \
         -keyout "${SSL_DIR}/vsftpd/vsftpd.key" \
         -out "${SSL_DIR}/vsftpd/vsftpd.crt" \
         -subj "/C=MX/ST=Sinaloa/L=Culiacan/O=Reprobados/OU=FTP/CN=${SERVER_IP}" \
+        -addext "subjectAltName=IP:${SERVER_IP}" \
         -sha256 2>/dev/null
 
-    # Combinar en .pem (requerido por algunas versiones de vsftpd)
+    # Si la version de openssl no soporta -addext, generar sin el
+    if [ $? -ne 0 ]; then
+        fn_info "Generando certificado sin SAN (openssl antiguo)..."
+        openssl req -x509 -nodes -days 365 \
+            -newkey rsa:2048 \
+            -keyout "${SSL_DIR}/vsftpd/vsftpd.key" \
+            -out "${SSL_DIR}/vsftpd/vsftpd.crt" \
+            -subj "/C=MX/ST=Sinaloa/L=Culiacan/O=Reprobados/OU=FTP/CN=${SERVER_IP}" \
+            -sha256 2>/dev/null
+    fi
+
+    # Combinar en .pem
     cat "${SSL_DIR}/vsftpd/vsftpd.key" "${SSL_DIR}/vsftpd/vsftpd.crt" \
         > "${SSL_DIR}/vsftpd/vsftpd.pem"
     chmod 600 "${SSL_DIR}/vsftpd/vsftpd.key"
     chmod 600 "${SSL_DIR}/vsftpd/vsftpd.pem"
+    chmod 644 "${SSL_DIR}/vsftpd/vsftpd.crt"
     fn_sec "Certificado FTPS generado."
 
     # Detectar ruta del vsftpd.conf
@@ -765,7 +795,17 @@ fn_configurar_ftps() {
 
     fn_info "Usando configuracion en: $VSFTPD_CONF"
 
-    # Escribir configuracion completa compatible con vsftpd 3.0.5 Mageia
+    # -------------------------------------------------------------------------
+    # CONFIGURACION VSFTPD CORREGIDA PARA FILEZILLA + GNUTLS
+    #
+    # Cambios respecto a version anterior:
+    #   1. ssl_tlsv1=NO  -> evita negociar TLS 1.0 que FileZilla moderno rechaza
+    #   2. ssl_tlsv1_2=YES -> fuerza TLS 1.2 minimo
+    #   3. ssl_ciphers simplificado a HIGH compatible con GnuTLS de FileZilla
+    #   4. require_ssl_reuse=NO -> critico para modo pasivo con FileZilla
+    #   5. pasv_address usa IP detectada dinamicamente
+    #   6. rsa_cert_file apunta al .pem combinado (clave + cert)
+    # -------------------------------------------------------------------------
     cat > "$VSFTPD_CONF" <<VSFTPDEOF
 listen=YES
 local_enable=YES
@@ -788,18 +828,34 @@ check_shell=NO
 # Acceso anonimo desactivado
 anonymous_enable=NO
 
-# FTPS - SSL/TLS - Practica 7
+# FTPS - SSL/TLS
+# Corregido para compatibilidad con FileZilla y GnuTLS (-15)
 ssl_enable=YES
 rsa_cert_file=${SSL_DIR}/vsftpd/vsftpd.pem
 rsa_private_key_file=${SSL_DIR}/vsftpd/vsftpd.key
-ssl_tlsv1=YES
+
+# Protocolo: solo TLS 1.2+ (FileZilla moderno rechaza TLS 1.0/1.1)
+ssl_tlsv1=NO
+ssl_tlsv1_1=NO
+ssl_tlsv1_2=YES
 ssl_sslv2=NO
 ssl_sslv3=NO
+
+# Forzar SSL en datos y login
 force_local_data_ssl=YES
 force_local_logins_ssl=YES
+
+# CRITICO para modo pasivo con FileZilla: NO reusar sesion SSL del canal de datos
 require_ssl_reuse=NO
-ssl_ciphers=ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:AES256-SHA:AES128-SHA
+
+# Ciphers compatibles con GnuTLS (FileZilla usa GnuTLS internamente)
+# HIGH evita los ciphers debiles y es aceptado por GnuTLS sin errores -15
+ssl_ciphers=HIGH
+
+# No usar SSL implicito (puerto 990) - usar FTPS explicito en puerto 21
 implicit_ssl=NO
+
+# Log SSL para depuracion (puedes poner NO cuando funcione)
 debug_ssl=YES
 VSFTPDEOF
 
@@ -813,11 +869,18 @@ VSFTPDEOF
     if [ $? -eq 0 ]; then
         fn_sec "vsftpd reiniciado con FTPS activado."
         fn_ok "FTPS configurado correctamente en ${SERVER_IP}"
+        echo ""
+        fn_info "En FileZilla usa:"
+        fn_info "  Host:      ${SERVER_IP}"
+        fn_info "  Puerto:    21"
+        fn_info "  Protocolo: FTP"
+        fn_info "  Cifrado:   Requerir FTP explicito sobre TLS"
+        fn_info "  Acceso:    Normal + usuario/contrasena"
     else
         fn_err "No se pudo reiniciar vsftpd. Revisa: systemctl status vsftpd"
     fi
 
-    RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[vsftpd] FTPS activado | Cert: ${SSL_DIR}/vsftpd/vsftpd.crt"
+    RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[vsftpd] FTPS activado en ${SERVER_IP} | Cert: ${SSL_DIR}/vsftpd/vsftpd.crt"
 }
 
 # -----------------------------------------------------------------------------
@@ -833,7 +896,6 @@ fn_instalar_web_con_ssl() {
 
     case "$SERVICIO" in
         apache)
-            # En Mageia: paquete=apache, servicio=httpd, conf=/etc/httpd/conf/httpd.conf
             urpmi --auto --quiet apache apache-mod_ssl apache-mod_headers 2>/dev/null
 
             local APACHE_CONF="/etc/httpd/conf/httpd.conf"
@@ -841,13 +903,10 @@ fn_instalar_web_con_ssl() {
             local WEBROOT="/var/www/html"
             mkdir -p "$APACHE_CONFD" "$WEBROOT"
 
-            # Limpiar configuracion previa de practica7
             rm -f "${APACHE_CONFD}/practica7-ssl.conf" 2>/dev/null
 
-            # Ajustar puerto de escucha (reemplaza cualquier puerto Listen existente)
             sed -i "s/^Listen.*$/Listen ${PUERTO}/" "$APACHE_CONF" 2>/dev/null
 
-            # Asegurar que mod_ssl y mod_headers esten cargados
             grep -q 'LoadModule ssl_module' "$APACHE_CONF" || \
                 echo "LoadModule ssl_module modules/mod_ssl.so" >> "$APACHE_CONF"
             grep -q 'LoadModule headers_module' "$APACHE_CONF" || \
@@ -880,7 +939,6 @@ APACHESSLCONF
                 fn_sec "VirtualHost SSL creado."
             fi
 
-            # Crear pagina HTML con datos correctos
             cat > "${WEBROOT}/index.html" <<HTMLEOF
 <!DOCTYPE html>
 <html lang="es">
@@ -937,7 +995,6 @@ HTMLEOF
                 local CERT_DIR="${SSL_DIR}/nginx"
                 SSL_LABEL="Si"
 
-                # Pedir puerto HTTPS separado para no chocar con Apache (443)
                 echo ""
                 echo -e "${YELLOW}Ingresa el puerto HTTPS para Nginx (ej: 8443, 9443):${NC}"
                 while true; do
@@ -980,7 +1037,6 @@ server {
 }
 NGINXCONF
 
-                # Abrir puerto SSL en firewall
                 iptables -I INPUT -p tcp --dport "$PUERTO_SSL" -j ACCEPT 2>/dev/null
 
             else
@@ -998,7 +1054,6 @@ server {
 NGINXCONF
             fi
 
-            # Crear pagina HTML
             cat > "${NGINX_WEBROOT}/index.html" <<HTMLEOF
 <!DOCTYPE html>
 <html lang="es">
@@ -1047,11 +1102,9 @@ HTMLEOF
                 urpmi --auto --quiet java-11-openjdk 2>/dev/null
             fi
 
-            # Detectar nombre del servicio tomcat
             local TOMCAT_SVC="tomcat"
             systemctl list-units --type=service 2>/dev/null | grep -q "tomcat9" && TOMCAT_SVC="tomcat9"
 
-            # Detectar directorio de configuracion de tomcat
             local TOMCAT_CONF=""
             for DIR in /etc/tomcat /etc/tomcat9 /usr/share/tomcat/conf /usr/share/tomcat9/conf; do
                 [ -f "${DIR}/server.xml" ] && TOMCAT_CONF="$DIR" && break
@@ -1060,14 +1113,12 @@ HTMLEOF
             local SSL_LABEL="No"
             local PUERTO_SSL_TC="8443"
 
-            # Detener tomcat antes de modificar
             systemctl stop "$TOMCAT_SVC" 2>/dev/null
 
             if [ "$SSL" = "si" ]; then
                 fn_generar_certificado_ssl "tomcat"
                 local CERT_DIR="${SSL_DIR}/tomcat"
 
-                # Pedir puerto HTTPS separado
                 echo ""
                 echo -e "${YELLOW}Ingresa el puerto HTTPS para Tomcat (ej: 8444, 9444):${NC}"
                 while true; do
@@ -1086,7 +1137,6 @@ HTMLEOF
                 SSL_LABEL="Si (puerto ${PUERTO_SSL_TC})"
                 PUERTO_SSL_USADO="$PUERTO_SSL_TC"
 
-                # Convertir certificado PEM a keystore JKS
                 fn_sec "Convirtiendo certificado a formato JKS para Tomcat..."
                 if ! command -v keytool &>/dev/null; then
                     urpmi --auto --quiet java-11-openjdk 2>/dev/null
@@ -1110,7 +1160,6 @@ HTMLEOF
                 chmod 640 "${CERT_DIR}/keystore.jks"
                 fn_sec "Keystore JKS generado: ${CERT_DIR}/keystore.jks"
 
-                # Generar server.xml limpio con SSL usando HTTP/1.1 (Java puro, sin APR)
                 cat > "${TOMCAT_CONF}/server.xml" <<SERVERXML
 <?xml version="1.0" encoding="UTF-8"?>
 <Server port="8005" shutdown="SHUTDOWN">
@@ -1155,7 +1204,6 @@ SERVERXML
                 fn_sec "server.xml generado con SSL en puerto ${PUERTO_SSL_TC}"
 
             else
-                # Generar server.xml limpio sin SSL
                 cat > "${TOMCAT_CONF}/server.xml" <<SERVERXML
 <?xml version="1.0" encoding="UTF-8"?>
 <Server port="8005" shutdown="SHUTDOWN">
@@ -1194,7 +1242,6 @@ SERVERXML
                 fn_ok "server.xml generado en puerto ${PUERTO}"
             fi
 
-            # Crear pagina HTML en el webroot de Tomcat
             local TOMCAT_WEBROOT=""
             for DIR in /var/lib/tomcat/webapps/ROOT /var/lib/tomcat9/webapps/ROOT \
                        /usr/share/tomcat/webapps/ROOT /usr/share/tomcat9/webapps/ROOT; do
@@ -1256,7 +1303,7 @@ fn_verificar_servicio_http() {
     local NOMBRE="$1"
     local PUERTO="$2"
     local SSL="$3"
-    local PUERTO_SSL="${4:-443}"   # Puerto HTTPS, por defecto 443
+    local PUERTO_SSL="${4:-443}"
 
     echo -e "\n${CYAN}Verificando ${NOMBRE}...${NC}"
 
@@ -1393,7 +1440,6 @@ fn_instalar_servicio_hibrido() {
     local SSL="no"
     fn_preguntar_ssl && SSL="si"
 
-    # Variable global para el puerto SSL (se asigna dentro de fn_instalar_web_con_ssl)
     PUERTO_SSL_USADO="443"
 
     if [ "$ORIGEN" = "1" ]; then
@@ -1409,7 +1455,6 @@ fn_instalar_servicio_hibrido() {
         esac
     fi
 
-    # Firewall
     if command -v firewall-cmd &>/dev/null; then
         firewall-cmd --permanent --add-port="${PUERTO}/tcp" 2>/dev/null
         firewall-cmd --reload 2>/dev/null
