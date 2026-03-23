@@ -2,7 +2,6 @@
 # =============================================================================
 # p7_main.sh - Script Principal Practica 7
 # Sistema Operativo: Mageia Linux
-# Integracion: FTP dinamico + SSL/TLS + Verificacion Hash
 # Uso: sudo bash p7_main.sh
 # =============================================================================
 
@@ -11,15 +10,11 @@ FUNCTIONS_FILE="${SCRIPT_DIR}/p7_functions.sh"
 
 if [ ! -f "$FUNCTIONS_FILE" ]; then
     echo "[ERROR] No se encontro p7_functions.sh en: $FUNCTIONS_FILE"
-    echo "Asegurate de que p7_main.sh y p7_functions.sh esten en el mismo directorio."
     exit 1
 fi
 
 source "$FUNCTIONS_FILE"
 
-# =============================================================================
-# MENU PRINCIPAL
-# =============================================================================
 fn_menu_principal_p7() {
     while true; do
         fn_header_p7
@@ -80,7 +75,6 @@ fn_menu_principal_p7() {
                     fi
                 done
                 echo ""
-                echo -e "${CYAN}Procesos HTTP/FTP activos:${NC}"
                 ps aux 2>/dev/null | grep -E "httpd|nginx|tomcat|java|vsftpd" | grep -v grep \
                     || echo "  (ninguno)"
                 echo ""
@@ -96,15 +90,12 @@ fn_menu_principal_p7() {
                 exit 0
                 ;;
             *)
-                echo -e "${RED}[ERROR] Opcion invalida. Elige entre 0 y 6.${NC}"
+                echo -e "${RED}[ERROR] Opcion invalida.${NC}"
                 sleep 1
                 ;;
         esac
     done
 }
 
-# =============================================================================
-# PUNTO DE ENTRADA
-# =============================================================================
 fn_verificar_root_p7
 fn_menu_principal_p7
