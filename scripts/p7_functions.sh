@@ -798,8 +798,9 @@ check_shell=NO
 # Acceso anonimo activado
 anonymous_enable=YES
 no_anon_password=YES
-anon_root=/var/ftp
+anon_root=/http/Linux
 allow_anon_ssl=YES
+local_root=/http/Linux
 
 # FTPS - SSL/TLS - Practica 7
 ssl_enable=YES
@@ -817,10 +818,18 @@ seccomp_sandbox=NO
 debug_ssl=YES
 VSFTPDEOF
 
-    # Crear directorio para anonimo si no existe
-    mkdir -p /var/ftp/pub
-    chmod 755 /var/ftp
-    chmod 777 /var/ftp/pub
+    # Crear directorio para anonimo y local root
+    mkdir -p /http/Linux/apache
+    mkdir -p /http/Linux/nginx
+    mkdir -p /http/Linux/tomcat
+    echo "Servidor FTP Mageia - Archivos listos" > /http/Linux/info.txt
+    
+    # Permisos para u1 y anonimo
+    chown -R ${FTP_USER}:ftp /http/Linux
+    chmod -R 755 /http/Linux
+    chmod 777 /http/Linux/apache /http/Linux/nginx /http/Linux/tomcat
+
+    fn_ok "Estructura de directorios /http/Linux creada."
 
     # Abrir puertos en firewall
     iptables -I INPUT -p tcp --dport 21 -j ACCEPT 2>/dev/null
