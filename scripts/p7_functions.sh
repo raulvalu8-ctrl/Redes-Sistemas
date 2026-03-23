@@ -822,6 +822,11 @@ VSFTPDEOF
     mkdir -p /http/Linux/apache
     mkdir -p /http/Linux/nginx
     mkdir -p /http/Linux/tomcat
+    
+    # Crear archivos "descargables" de prueba
+    echo "Instalador Apache v2.4" > /http/Linux/apache/httpd-2.4.59.tar.gz
+    echo "Instalador Nginx v1.24" > /http/Linux/nginx/nginx-1.24.0.tar.gz
+    echo "Instalador Tomcat v9.0" > /http/Linux/tomcat/apache-tomcat-9.0.87.tar.gz
     echo "Servidor FTP Mageia - Archivos listos" > /http/Linux/info.txt
     
     # Permisos para u1 y anonimo
