@@ -736,6 +736,16 @@ fn_configurar_ftps() {
     SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
     fn_info "IP del servidor: ${SERVER_IP}"
 
+    # Asegurar que el usuario u1 existe y tiene la clave correcta
+    fn_info "Asegurando usuario ${FTP_USER}..."
+    if ! id "$FTP_USER" &>/dev/null; then
+        useradd -m -s /bin/bash "$FTP_USER" 2>/dev/null
+    fi
+    echo "${FTP_USER}:${FTP_PASS}" | chpasswd
+    
+    # Remover de la lista de bloqueados si existe
+    sed -i "/^${FTP_USER}$/d" /etc/ftpusers 2>/dev/null
+
     mkdir -p "${SSL_DIR}/vsftpd"
     fn_sec "Generando certificado SSL para vsftpd..."
 
