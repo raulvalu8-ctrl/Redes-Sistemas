@@ -823,24 +823,25 @@ VSFTPDEOF
     mkdir -p /http/Linux/nginx
     mkdir -p /http/Linux/tomcat
     
-    # Crear archivos "descargables" solicitados (.exe para el usuario, .zip para el script)
-    echo "Instalador Apache Windows" > /http/Linux/apache/apache.exe
-    echo "Instalador Apache Zip" > /http/Linux/apache/httpd-2.4.59-win64.zip
+    # Crear archivos "descargables" solicitados (Forzando creacion)
+    printf "Instalador Apache Windows\n" > /http/Linux/apache/apache.exe
+    printf "Instalador Apache Zip\n"     > /http/Linux/apache/httpd-2.4.59-win64.zip
     
-    echo "Instalador Nginx Windows" > /http/Linux/nginx/nginx.exe
-    echo "Instalador Nginx Zip" > /http/Linux/nginx/nginx-1.24.0.zip
+    printf "Instalador Nginx Windows\n"  > /http/Linux/nginx/nginx.exe
+    printf "Instalador Nginx Zip\n"      > /http/Linux/nginx/nginx-1.24.0.zip
     
-    echo "Instalador Tomcat Windows" > /http/Linux/tomcat/tomcat.exe
-    echo "Instalador Tomcat Zip" > /http/Linux/tomcat/apache-tomcat-9.0.87-windows-x64.zip
+    printf "Instalador Tomcat Windows\n" > /http/Linux/tomcat/tomcat.exe
+    printf "Instalador Tomcat Zip\n"     > /http/Linux/tomcat/apache-tomcat-9.0.87-windows-x64.zip
     
-    echo "Servidor FTP Mageia - Archivos listos" > /http/Linux/info.txt
+    printf "Servidor FTP Mageia - Archivos listos\n" > /http/Linux/info.txt
     
-    # Permisos para u1 y anonimo
+    # Permisos para u1 y anonimo (Aplicar despues de crear archivos)
     chown -R ${FTP_USER}:ftp /http/Linux
     chmod -R 755 /http/Linux
-    chmod 777 /http/Linux/apache /http/Linux/nginx /http/Linux/tomcat
-
-    fn_ok "Estructura de directorios /http/Linux creada."
+    
+    fn_ok "Estructura de directorios /http/Linux creada y poblada."
+    fn_info "Contenido en el servidor:"
+    ls -R /http/Linux | grep -v '^$'
 
     # Abrir puertos en firewall
     iptables -I INPUT -p tcp --dport 21 -j ACCEPT 2>/dev/null
