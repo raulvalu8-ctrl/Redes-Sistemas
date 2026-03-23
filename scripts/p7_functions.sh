@@ -856,13 +856,34 @@ fn_instalar_web_con_ssl() {
                 echo "LoadModule socache_shmcb_module modules/mod_socache_shmcb.so" >> "$APACHE_CONF"
 
             local SSL_LABEL="No"
+            local PUERTO_SSL_APACHE="443"
             if [ "$SSL" = "si" ]; then
                 fn_generar_certificado_ssl "apache"
                 local CERT_DIR="${SSL_DIR}/apache"
-                SSL_LABEL="Si (puerto 443)"
+
+                # Pedir puerto HTTPS dinamico para no chocar con otros servicios
+                echo ""
+                echo -e "${CYAN}Ingresa el puerto HTTPS para Apache (ej: 443, 8441, 9441):${NC}"
+                while true; do
+                    read -r PUERTO_SSL_APACHE
+                    if [[ "$PUERTO_SSL_APACHE" =~ ^[0-9]+$ ]] && \
+                       [ "$PUERTO_SSL_APACHE" -ge 1 ] && [ "$PUERTO_SSL_APACHE" -le 65535 ]; then
+                        if ss -tlnp 2>/dev/null | grep -q ":${PUERTO_SSL_APACHE} "; then
+                            fn_err "Puerto ${PUERTO_SSL_APACHE} ya esta en uso. Elige otro."
+                        else
+                            fn_ok "Puerto HTTPS ${PUERTO_SSL_APACHE} disponible."
+                            break
+                        fi
+                    else
+                        fn_err "Puerto invalido."
+                    fi
+                done
+                SSL_LABEL="Si (puerto ${PUERTO_SSL_APACHE})"
+                PUERTO_SSL_USADO="${PUERTO_SSL_APACHE}"
 
                 cat > "${APACHE_CONFD}/practica7-ssl.conf" <<APACHESSLCONF
-<VirtualHost *:443>
+Listen ${PUERTO_SSL_APACHE}
+<VirtualHost *:${PUERTO_SSL_APACHE}>
     ServerName ${DOMINIO}
     DocumentRoot ${WEBROOT}
     SSLEngine on
@@ -874,10 +895,11 @@ fn_instalar_web_con_ssl() {
 
 <VirtualHost *:${PUERTO}>
     ServerName ${DOMINIO}
-    Redirect permanent / https://${DOMINIO}/
+    Redirect permanent / https://${DOMINIO}:${PUERTO_SSL_APACHE}/
 </VirtualHost>
 APACHESSLCONF
-                fn_sec "VirtualHost SSL creado."
+                fn_sec "VirtualHost SSL creado en puerto ${PUERTO_SSL_APACHE}."
+                iptables -I INPUT -p tcp --dport "$PUERTO_SSL_APACHE" -j ACCEPT 2>/dev/null
             fi
 
             # Crear pagina HTML con datos correctos
@@ -921,7 +943,6 @@ HTMLEOF
             RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Apache] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
             ;;
 
-        nginx)
             urpmi --auto --quiet nginx 2>/dev/null
 
             local NGINX_CONFD="/etc/nginx/conf.d"
