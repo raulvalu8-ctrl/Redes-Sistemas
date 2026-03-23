@@ -21,7 +21,7 @@ NC='\033[0m'
 # -----------------------------------------------------------------------------
 # VARIABLES GLOBALES
 # -----------------------------------------------------------------------------
-FTP_SERVER="192.168.107.128"
+FTP_SERVER="192.168.5.129"
 FTP_PORT="21"
 FTP_USER="u1"
 FTP_PASS="alumno1"
@@ -796,15 +796,12 @@ ssl_enable=YES
 rsa_cert_file=${SSL_DIR}/vsftpd/vsftpd.crt
 rsa_private_key_file=${SSL_DIR}/vsftpd/vsftpd.key
 ssl_tlsv1=YES
-ssl_tlsv1_1=YES
-ssl_tlsv1_2=YES
-ssl_tlsv1_3=YES
 ssl_sslv2=NO
 ssl_sslv3=NO
 force_local_data_ssl=YES
 force_local_logins_ssl=YES
 require_ssl_reuse=NO
-ssl_ciphers=DEFAULT
+ssl_ciphers=HIGH
 implicit_ssl=NO
 seccomp_sandbox=NO
 debug_ssl=YES
@@ -826,7 +823,10 @@ VSFTPDEOF
         fn_sec "vsftpd reiniciado con FTPS activado."
         fn_ok "FTPS configurado correctamente en ${SERVER_IP}"
     else
-        fn_err "No se pudo reiniciar vsftpd. Revisa: systemctl status vsftpd"
+        fn_err "No se pudo reiniciar vsftpd."
+        fn_info "Diagnostico del error:"
+        journalctl -u vsftpd --no-pager | tail -n 20
+        return 1
     fi
 
     RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[vsftpd] FTPS activado | Cert: ${SSL_DIR}/vsftpd/vsftpd.crt"
