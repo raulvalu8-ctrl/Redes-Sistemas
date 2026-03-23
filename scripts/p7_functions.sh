@@ -798,9 +798,9 @@ check_shell=NO
 # Acceso anonimo activado
 anonymous_enable=YES
 no_anon_password=YES
-anon_root=/http/Linux
+anon_root=/var/ftp/pkg/Linux
 allow_anon_ssl=YES
-local_root=/http/Linux
+local_root=/var/ftp/pkg/Linux
 
 # FTPS - SSL/TLS - Practica 7
 ssl_enable=YES
@@ -819,29 +819,32 @@ debug_ssl=YES
 VSFTPDEOF
 
     # Crear directorio para anonimo y local root
-    mkdir -p /http/Linux/apache
-    mkdir -p /http/Linux/nginx
-    mkdir -p /http/Linux/tomcat
+    local FTP_ROOT="/var/ftp/pkg/Linux"
+    mkdir -p "${FTP_ROOT}/apache"
+    mkdir -p "${FTP_ROOT}/nginx"
+    mkdir -p "${FTP_ROOT}/tomcat"
     
     # Crear archivos "descargables" solicitados (Forzando creacion)
-    printf "Instalador Apache Windows\n" > /http/Linux/apache/apache.exe
-    printf "Instalador Apache Zip\n"     > /http/Linux/apache/httpd-2.4.59-win64.zip
+    printf "Instalador Apache Windows\n" > "${FTP_ROOT}/apache/apache.exe"
+    printf "Instalador Apache Zip\n"     > "${FTP_ROOT}/apache/httpd-2.4.59-win64.zip"
     
-    printf "Instalador Nginx Windows\n"  > /http/Linux/nginx/nginx.exe
-    printf "Instalador Nginx Zip\n"      > /http/Linux/nginx/nginx-1.24.0.zip
+    printf "Instalador Nginx Windows\n"  > "${FTP_ROOT}/nginx/nginx.exe"
+    printf "Instalador Nginx Zip\n"      > "${FTP_ROOT}/nginx/nginx-1.24.0.zip"
     
-    printf "Instalador Tomcat Windows\n" > /http/Linux/tomcat/tomcat.exe
-    printf "Instalador Tomcat Zip\n"     > /http/Linux/tomcat/apache-tomcat-9.0.87-windows-x64.zip
+    printf "Instalador Tomcat Windows\n" > "${FTP_ROOT}/tomcat/tomcat.exe"
+    printf "Instalador Tomcat Zip\n"     > "${FTP_ROOT}/tomcat/apache-tomcat-9.0.87-windows-x64.zip"
     
-    printf "Servidor FTP Mageia - Archivos listos\n" > /http/Linux/info.txt
+    printf "Servidor FTP Mageia - Archivos listos\n" > "${FTP_ROOT}/info.txt"
     
     # Permisos para u1 y anonimo (Aplicar despues de crear archivos)
-    chown -R ${FTP_USER}:ftp /http/Linux
-    chmod -R 755 /http/Linux
+    chown -R ${FTP_USER}:ftp "$FTP_ROOT"
+    chmod -R 777 "$FTP_ROOT"
     
-    fn_ok "Estructura de directorios /http/Linux creada y poblada."
-    fn_info "Contenido en el servidor:"
-    ls -R /http/Linux | grep -v '^$'
+    fn_ok "Estructura de directorios ${FTP_ROOT} creada y poblada."
+    fn_info "Probando listado en terminal Linux:"
+    ls -la "${FTP_ROOT}/apache" | grep ".exe" && fn_ok "Archivo detectado en apache/"
+    ls -la "${FTP_ROOT}/nginx" | grep ".exe" && fn_ok "Archivo detectado en nginx/"
+    ls -la "${FTP_ROOT}/tomcat" | grep ".exe" && fn_ok "Archivo detectado en tomcat/"
 
     # Abrir puertos en firewall
     iptables -I INPUT -p tcp --dport 21 -j ACCEPT 2>/dev/null
