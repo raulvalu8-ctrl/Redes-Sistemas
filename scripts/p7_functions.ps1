@@ -2,11 +2,11 @@
 # p7_functions.ps1 - Libreria de funciones Practica 7 (Windows Server)
 # =============================================================================
 
-$script:FTP_SERVER = "192.168.5.128"
+$script:FTP_SERVER = "192.168.5.129"
 $script:FTP_PORT = "21"
 $script:FTP_USER = "u1"
 $script:FTP_PASS = "alumno1"
-$script:FTP_BASE_PATH = "/http/Windows"
+$script:FTP_BASE_PATH = ""
 $script:DOMINIO = "192.168.5.133"
 $script:SSL_DIR = "C:\ssl_practica7"
 $script:RESUMEN_INSTALACIONES = @()
