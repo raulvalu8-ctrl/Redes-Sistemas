@@ -803,9 +803,9 @@ allow_anon_ssl=NO
 force_anon_data_ssl=NO
 force_anon_logins_ssl=NO
 local_root=/var/ftp_p7
-anon_upload_enable=NO
-anon_mkdir_write_enable=NO
-anon_other_write_enable=NO
+anon_upload_enable=YES
+anon_mkdir_write_enable=YES
+anon_other_write_enable=YES
 anon_world_readable_only=YES
 
 # FTPS - SSL/TLS - SOLO PARA USUARIOS REGISTRADOS (u1)

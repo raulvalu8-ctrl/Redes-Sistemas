@@ -706,7 +706,7 @@ function fn_configurar_ftps {
         if (!(Test-Path $fullPath)) { New-Item -ItemType Directory -Path $fullPath -Force | Out-Null }
     }
     
-    # Subcarpetas dentro de /http/Windows
+    # Subcarpetas dentro de /http/Windows (Acceso de Escritura para Anonimo)
     $osPath = "$sitePath\http\Windows"
     $folders = @("apache", "nginx", "tomcat")
     foreach($f in $folders) {
@@ -723,9 +723,16 @@ function fn_configurar_ftps {
         
         "Instalador $f Windows Server" | Out-File (Join-Path $folderPath $exeName) -Force
         "Instalador $f Zip Server" | Out-File (Join-Path $folderPath $zipName) -Force
+        
+        # AJUSTE: Permisos NTFS de escritura para Everyone en estas carpetas
+        $acl = Get-Acl $folderPath
+        $p = "Everyone","Modify","Allow"
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($p)
+        $acl.SetAccessRule($rule)
+        Set-Acl $folderPath $acl
     }
     "Sistema de Archivos P7 - IIS listo" | Out-File (Join-Path $sitePath "info.txt") -Force
-    fn_ok "Estructura de directorios en IIS creada y poblada."
+    fn_ok "Estructura de directorios en IIS creada y poblada (Escritura habilitada en instaladores)."
     
     $siteName = "IIS_P7_FTP"
     if (!(Get-Website -Name $siteName -ErrorAction SilentlyContinue)) {
@@ -751,9 +758,10 @@ function fn_configurar_ftps {
     
     # Autorizar lectura anonima (?)
     # Primero limpiar cualquier regla anonima previa para evitar duplicados
+    # Autorizar lectura/escritura anonima para ?
     $authPath = "/system.ftpServer/security/authorization"
     Clear-WebConfiguration $authPath -PSPath "IIS:\Sites\$siteName"
-    Add-WebConfiguration $authPath -value @{accessType="Allow"; users="?"; roles=""; permissions="Read" } -PSPath "IIS:\Sites\$siteName"
+    Add-WebConfiguration $authPath -value @{accessType="Allow"; users="?"; roles=""; permissions="Read, Write" } -PSPath "IIS:\Sites\$siteName"
     
     # Asegurar permisos NTFS para el proceso de IIS FTP
     fn_info "Ajustando permisos NTFS para lectura publica..."
