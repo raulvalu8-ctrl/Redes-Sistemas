@@ -863,28 +863,23 @@ VSFTPDEOF
     
     printf "Servidor FTP Mageia - Jerarquia P7 Lista\n" > "${FTP_ROOT}/info.txt"
     
-    # Permisos CRITICOS para cumplimiento y seguridad (chroot fix)
-    fn_info "Configurando permisos detallados (u1=Privado, Instaladores=Publico-Escritura)..."
+    # Permisos COMPLETOS para u1, RESTRINGIDOS para anonimo
+    fn_info "Configurando permisos: u1=FULL, Anon=Solo Instaladores..."
     
-    # 1. Raiz del FTP: Solo lectura para que el chroot de vsftpd funcione
-    chown root:root "$FTP_ROOT"
-    chmod 555 "$FTP_ROOT"
+    # 1. Raiz del FTP: u1 puede escribir (chroot writable habilitado en config)
+    chown ${FTP_USER}:ftp "$FTP_ROOT"
+    chmod 775 "$FTP_ROOT"
     
-    # 2. Carpeta u1: Solo el usuario u1 puede escribir, anonimo solo ve
-    chown ${FTP_USER}:ftp "${FTP_ROOT}/u1"
-    chmod 775 "${FTP_ROOT}/u1"
+    # 2. Carpeta u1 y general (u1 es dueno y tiene acceso total)
+    chown -R ${FTP_USER}:ftp "${FTP_ROOT}/u1"
+    chown -R ${FTP_USER}:ftp "${FTP_ROOT}/general"
+    chmod -R 775 "${FTP_ROOT}/u1"
+    chmod -R 775 "${FTP_ROOT}/general"
     
-    # 3. Carpeta general: Solo lectura para todos
-    chown root:ftp "${FTP_ROOT}/general"
-    chmod 755 "${FTP_ROOT}/general"
-    
-    # 4. Carpetas de Instaladores: TODO EL MUNDO (incluyendo anonimo) puede escribir
-    # Esto es lo que pediste: apache, nginx y tomcat son libres
+    # 3. Carpetas de Instaladores: Anonimo puede escribir aqui
     chown -R ${FTP_USER}:ftp "${FTP_ROOT}/http"
-    chmod 755 "${FTP_ROOT}/http" # Carpeta base http solo lectura
-    chmod 755 "${FTP_ROOT}/http/Linux" 
-    
-    # Subcarpetas si son escribibles
+    chmod 775 "${FTP_ROOT}/http"
+    chmod 775 "${FTP_ROOT}/http/Linux"
     chmod -R 777 "${FTP_ROOT}/http/Linux/apache" 2>/dev/null
     chmod -R 777 "${FTP_ROOT}/http/Linux/nginx" 2>/dev/null
     chmod -R 777 "${FTP_ROOT}/http/Linux/tomcat" 2>/dev/null

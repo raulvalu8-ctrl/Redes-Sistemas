@@ -738,15 +738,28 @@ function fn_configurar_ftps {
         "Instalador $f Windows Server" | Out-File (Join-Path $folderPath $exeName) -Force
         "Instalador $f Zip Server" | Out-File (Join-Path $folderPath $zipName) -Force
         
-        # AJUSTE: Permisos NTFS de escritura para Everyone en estas carpetas
+        # EL USUARIO NORMAL PUEDE TODO, EL ANONIMO SOLO AQUI
         $acl = Get-Acl $folderPath
-        $p = "Everyone","Modify","Allow"
-        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($p)
-        $acl.SetAccessRule($rule)
+        $p_anon = "Everyone","Modify","Allow"
+        $rule_anon = New-Object System.Security.AccessControl.FileSystemAccessRule($p_anon)
+        $acl.SetAccessRule($rule_anon)
         Set-Acl $folderPath $acl
     }
+    
+    # PERMISOS DE LA RAIZ: u1 (Users) puede TODO
+    $acl_root = Get-Acl $sitePath
+    $u1_root_p = "Users","Modify","Allow"
+    $u1_root_rule = New-Object System.Security.AccessControl.FileSystemAccessRule($u1_root_p)
+    $acl_root.SetAccessRule($u1_root_rule)
+    
+    # Pero el PUBLICO (Anonimo) en la RAIZ solo puede leer
+    $pub_root_p = "Everyone","ReadAndExecute","Allow"
+    $pub_root_rule = New-Object System.Security.AccessControl.FileSystemAccessRule($pub_root_p)
+    $acl_root.SetAccessRule($pub_root_rule)
+    Set-Acl $sitePath $acl_root
+    
     "Sistema de Archivos P7 - IIS listo" | Out-File (Join-Path $sitePath "info.txt") -Force
-    fn_ok "Estructura de directorios en IIS creada y poblada (Escritura habilitada en instaladores)."
+    fn_ok "Estructura de directorios en IIS creada y poblada (u1=Full, Anon=Restringido)."
     
     $siteName = "IIS_P7_FTP"
     if (!(Get-Website -Name $siteName -ErrorAction SilentlyContinue)) {
