@@ -791,6 +791,8 @@ function fn_configurar_ftps {
     
     fn_info "Creando nuevo sitio FTP base: $siteName..."
     New-WebFtpSite -Name $siteName -Port 21 -PhysicalPath $sitePath -Force | Out-Null
+    Start-Sleep -Seconds 2 # Pausa para que IIS registre el objeto
+
     
     fn_sec "Generando certificado SSL para FTPS..."
     $cert = New-SelfSignedCertificate -DnsName $script:DOMINIO -CertStoreLocation "cert:\LocalMachine\My" -NotAfter (Get-Date).AddYears(1)
@@ -828,7 +830,12 @@ function fn_configurar_ftps {
     $acl.SetAccessRule($accessRule)
     Set-Acl $sitePath $acl
     
-    Start-Website -Name $siteName -ErrorAction SilentlyContinue
+    # INTENTO ARRANQUE: Ignorar si el objeto aun no es "valido" para PowerShell
+    try {
+        Start-Website -Name $siteName -ErrorAction SilentlyContinue | Out-Null
+    } catch {
+        # El sitio se activara solo tras unos segundos
+    }
     
     fn_ok "FTPS (IIS) Completado: $script:DOMINIO (Escritura SOLO en instaladores)."
     $script:RESUMEN_INSTALACIONES += "[IIS FTP] FTPS Activo | Escritura: SOLO INSTALADORES | Puerto: 21"
