@@ -816,9 +816,12 @@ force_anon_data_ssl=NO
 force_anon_logins_ssl=NO
 VSFTPDEOF
 
-    # Crear configuracion especifica para permitir SSL solo a u1
+    # Crear configuracion especifica para permitir SSL y PODER TOTAL a u1
     mkdir -p /etc/vsftpd/user_config
     cat > /etc/vsftpd/user_config/${FTP_USER} <<U1EOF
+local_root=${FTP_ROOT}
+write_enable=YES
+allow_writeable_chroot=YES
 ssl_enable=YES
 rsa_cert_file=${SSL_DIR}/vsftpd/vsftpd.crt
 rsa_private_key_file=${SSL_DIR}/vsftpd/vsftpd.key
@@ -871,18 +874,18 @@ U1EOF
     printf "Servidor FTP Mageia - Jerarquia P7 Lista\n" > "${FTP_ROOT}/info.txt"
     
     # Permisos COMPLETOS para u1, RESTRINGIDOS para anonimo
-    fn_info "Configurando permisos: u1=FULL, Anon=Solo Instaladores..."
+    fn_info "Configuracion de permisos final (u1=ROOT-POWER, Anon=Restringido)..."
     
-    # 1. Raiz del FTP: root:root 555 - REQUERIDO para que el anonimo no de error 500
-    chown root:root "$FTP_ROOT"
-    chmod 555 "$FTP_ROOT"
+    # 1. Raiz del FTP: u1 es el dueno con 755. 
+    # u1 (owner) tiene rwx. Anonimo (otros) tiene r-x.
+    chown ${FTP_USER}:ftp "$FTP_ROOT"
+    chmod 755 "$FTP_ROOT"
     
-    # 2. Carpeta u1: PRIVADA (u1 es dueno, Anonimo SOLO LECTURA)
-    # Al poner 755 y ser u1 el dueno, el grupo ftp ya no puede escribir
-    chown ${FTP_USER}:${FTP_USER} "${FTP_ROOT}/u1"
+    # 2. Carpeta u1 y general
+    chown -R ${FTP_USER}:ftp "${FTP_ROOT}/u1"
     chown root:ftp "${FTP_ROOT}/general"
     chmod 755 "${FTP_ROOT}/u1"
-    chmod 755 "${FTP_ROOT}/general"
+    chmod 755 "${FTP_ROOT}/general" # Solo lectura publico
     
     # 3. Carpetas de Instaladores: Anonimo puede escribir aqui
     chown -R ${FTP_USER}:ftp "${FTP_ROOT}/http"
