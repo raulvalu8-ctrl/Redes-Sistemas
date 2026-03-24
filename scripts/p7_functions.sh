@@ -1108,13 +1108,13 @@ HTMLEOF
                 [ ! -f "$TC_CONF" ] && TC_CONF="/etc/tomcat9/server.xml"
                 
                 if [ -f "$TC_CONF" ]; then
-                    # Cambiar el primer "port=..." (que es el HTTP) sea cual sea el numero actual
-                    sed -i "s/port=\"[0-9]*\"/port=\"$PUERTO\"/1" "$TC_CONF" 2>/dev/null
-                    # Cambiar el primer "redirectPort=..." (que es el SSL)
-                    sed -i "s/redirectPort=\"[0-9]*\"/redirectPort=\"$PUERTO_SSL\"/1" "$TC_CONF" 2>/dev/null
+                    # MODO ULTRA ROBUSTO: Solo cambiar el primer port= que este dentro de un tag <Connector ... >
+                    # (Esto evita cambiar ports en comentarios o en otros tags)
+                    sed -i "/<Connector/s/port=\"[0-9]*\"/port=\"$PUERTO\"/1" "$TC_CONF" 2>/dev/null
+                    # Tambien el redirectPort por si acaso
+                    sed -i "/<Connector/s/redirectPort=\"[0-9]*\"/redirectPort=\"$PUERTO_SSL\"/1" "$TC_CONF" 2>/dev/null
+                    
                     # Añadir el conector SSL al final del bloque <Service>
-                    # (Esto lo hacemos solo la primera vez, pero sed no tiene facildad de "si no existe")
-                    # Para evitar duplicados brutales, buscamos si ya existe el puerto SSL en el archivo
                     if ! grep -q "port=\"$PUERTO_SSL\"" "$TC_CONF"; then
                         sed -i "s|</Service>|    <Connector port=\"$PUERTO_SSL\" address=\"0.0.0.0\" protocol=\"org.apache.coyote.http11.Http11NioProtocol\"\n               SSLEnabled=\"true\" scheme=\"https\" secure=\"true\"\n               keystoreFile=\"${CERT_DIR}/server.crt\"\n               keystorePass=\"practica7\"\n               clientAuth=\"false\" sslProtocol=\"TLS\" />\n</Service>|" "$TC_CONF"
                     fi
