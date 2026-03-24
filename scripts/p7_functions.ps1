@@ -782,18 +782,23 @@ function fn_configurar_ftps {
     }
     
     $siteName = "IIS_P7_FTP"
-    if (!(Get-Website -Name $siteName -ErrorAction SilentlyContinue)) {
-        fn_info "Creando nuevo sitio FTP base: $siteName..."
-        New-WebFtpSite -Name $siteName -Port 21 -PhysicalPath $sitePath -Force | Out-Null
+    # ELIMINAR SITIO PREVIO PARA ASEGURAR ESTADO LIMPIO (Fix 0x800710D8)
+    if (Get-Website -Name $siteName -ErrorAction SilentlyContinue) {
+        fn_info "Eliminando instancia previa de $siteName para recreacion limpia..."
+        Remove-Website -Name $siteName -ErrorAction SilentlyContinue 
+        Start-Sleep -Seconds 1
     }
+    
+    fn_info "Creando nuevo sitio FTP base: $siteName..."
+    New-WebFtpSite -Name $siteName -Port 21 -PhysicalPath $sitePath -Force | Out-Null
     
     fn_sec "Generando certificado SSL para FTPS..."
     $cert = New-SelfSignedCertificate -DnsName $script:DOMINIO -CertStoreLocation "cert:\LocalMachine\My" -NotAfter (Get-Date).AddYears(1)
     
     fn_info "Inyectando politicas de seguridad TLS/SSL al servidor FTP..."
-    Set-ItemProperty "IIS:\Sites\$siteName" -Name "ftpServer.security.ssl.controlChannelPolicy" -Value "RequireSsl"
-    Set-ItemProperty "IIS:\Sites\$siteName" -Name "ftpServer.security.ssl.dataChannelPolicy" -Value "RequireSsl"
-    Set-ItemProperty "IIS:\Sites\$siteName" -Name "ftpServer.security.ssl.serverCertHash" -Value $cert.GetCertHashString()
+    Set-WebConfigurationProperty -Filter /system.ftpServer/security/ssl -PSPath "IIS:\Sites\$siteName" -Name controlChannelPolicy -Value "SslAllow"
+    Set-WebConfigurationProperty -Filter /system.ftpServer/security/ssl -PSPath "IIS:\Sites\$siteName" -Name dataChannelPolicy -Value "SslAllow"
+    Set-WebConfigurationProperty -Filter /system.ftpServer/security/ssl -PSPath "IIS:\Sites\$siteName" -Name serverCertHash -Value $cert.GetCertHashString()
     
     fn_info "Limpiando y creando reglas de firewall para FTPS..."
     Remove-NetFirewallRule -DisplayName "FTPS P7*" -ErrorAction SilentlyContinue
