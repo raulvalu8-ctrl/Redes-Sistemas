@@ -193,6 +193,33 @@ function fn_instalar_iis_local([string]$Puerto, [string]$Ssl, [string]$PuertoSsl
     $script:RESUMEN_INSTALACIONES += "[IIS] Puerto: $Puerto | SSL: $Ssl (:$PuertoSsl)"
 }
 
+# -----------------------------------------------------------------------------
+# WRAPPERS DE COMPATIBILIDAD (PARA QUE TU SCRIPT NO FALLE)
+# -----------------------------------------------------------------------------
+
+function Install-IISWithSsl {
+    param([int]$Puerto = 80)
+    fn_instalar_iis_local "$Puerto" "si" "443"
+}
+
+function Install-ApacheWithSsl {
+    param([int]$Puerto = 8080)
+    fn_instalar_servicio_hibrido "apache" "Apache"
+}
+
+function Install-NginxWithSsl {
+    param([int]$Puerto = 8081)
+    fn_instalar_servicio_hibrido "nginx" "Nginx"
+}
+
+function Enable-SslFTP {
+    fn_configurar_ftps
+}
+
+function Test-Admin { fn_verificar_admin_p7 }
+function Test-Deps  { fn_verificar_dependencias }
+function Show-Resumen { fn_mostrar_resumen }
+
 function fn_instalar_servicio_hibrido([string]$servicio, [string]$NombreDisplay) {
     fn_verificar_admin_p7
     $puerto = Read-Host "`nPuerto HTTP para $NombreDisplay"
