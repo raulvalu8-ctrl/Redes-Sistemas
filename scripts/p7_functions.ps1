@@ -749,8 +749,7 @@ function fn_configurar_ftps {
         
         # EL USUARIO NORMAL PUEDE TODO, EL ANONIMO SOLO AQUI
         $acl = Get-Acl $folderPath
-        $p_anon = "Everyone","Modify","Allow"
-        $rule_anon = New-Object System.Security.AccessControl.FileSystemAccessRule($p_anon)
+        $rule_anon = New-Object System.Security.AccessControl.FileSystemAccessRule($sidEveryone, "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
         $acl.SetAccessRule($rule_anon)
         Set-Acl $folderPath $acl
     }
