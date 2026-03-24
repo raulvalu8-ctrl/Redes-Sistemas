@@ -877,11 +877,12 @@ U1EOF
     chown root:root "$FTP_ROOT"
     chmod 555 "$FTP_ROOT"
     
-    # 2. Carpeta u1 y general (u1 o root poseen esto)
-    chown ${FTP_USER}:ftp "${FTP_ROOT}/u1"
+    # 2. Carpeta u1: PRIVADA (u1 es dueno, Anonimo SOLO LECTURA)
+    # Al poner 755 y ser u1 el dueno, el grupo ftp ya no puede escribir
+    chown ${FTP_USER}:${FTP_USER} "${FTP_ROOT}/u1"
     chown root:ftp "${FTP_ROOT}/general"
-    chmod 775 "${FTP_ROOT}/u1"    # Escribible por u1
-    chmod 755 "${FTP_ROOT}/general" # Solo lectura publico
+    chmod 755 "${FTP_ROOT}/u1"
+    chmod 755 "${FTP_ROOT}/general"
     
     # 3. Carpetas de Instaladores: Anonimo puede escribir aqui
     chown -R ${FTP_USER}:ftp "${FTP_ROOT}/http"
