@@ -808,7 +808,7 @@ anon_mkdir_write_enable=YES
 anon_other_write_enable=YES
 anon_world_readable_only=YES
 
-# FTPS - SSL/TLS - Practica 7
+# FTPS - SSL/TLS - Practica 7 Global
 ssl_enable=YES
 allow_anon_ssl=NO
 force_local_data_ssl=YES
@@ -823,6 +823,7 @@ rsa_private_key_file=${SSL_DIR}/vsftpd/vsftpd.key
 debug_ssl=YES
 implicit_ssl=NO
 seccomp_sandbox=NO
+allow_writeable_chroot=YES
 VSFTPDEOF
 
 
