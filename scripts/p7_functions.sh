@@ -553,7 +553,7 @@ NGINXEOF
 
     if [ "$SSL" = "si" ]; then
         cat >> /usr/local/nginx/conf/nginx.conf <<REDIREOF
-        return 301 https://\$host\$request_uri;
+        return 301 https://\$host:$PUERTO_SSL\$request_uri;
 REDIREOF
     fi
 
@@ -677,7 +677,7 @@ fn_instalar_tomcat_ftp() {
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Tomcat - Activo</title>
+    <title>IIS - Activo</title>
     <style>
         body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eee;
                display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
@@ -693,7 +693,7 @@ fn_instalar_tomcat_ftp() {
     <div class="card">
         <h1>IIS - Windows Server</h1>
         <div>
-            <span class="badge">Servidor: IIS (Tomcat)</span>
+            <span class="badge">Servidor: IIS</span>
             <span class="badge">Version: ${VERSION}</span>
             <span class="badge">Puerto: ${PUERTO}</span>
             <span class="badge">SSL: ${SSL_LABEL}</span>
@@ -707,7 +707,7 @@ fn_instalar_tomcat_ftp() {
 </html>
 HTMLEOF
 
-    # Detectar JAVA_HOME dinamicamente
+    # Detectar JAVA_HOME dinamente
     local JAVA_HOME_DIR
     JAVA_HOME_DIR=$(dirname $(dirname $(readlink -f $(which java) 2>/dev/null) 2>/dev/null) 2>/dev/null)
 
@@ -740,7 +740,7 @@ fn_instalar_servicio_hibrido() {
     
     local SSL="no"
     local PUERTO=""
-    PUERTO_SSL_USADO="443"
+    local PUERTO_SSL_USADO="443"
 
     if [ "$MODO" = "1" ]; then
         # Preguntar por los dos puertos (HTTP y HTTPS)
@@ -764,7 +764,7 @@ fn_instalar_servicio_hibrido() {
         if [[ "$ACTIVAR_SSL" =~ ^[sS]$ ]]; then
             fn_instalar_web_con_ssl "$TIPO" "$PUERTO" "si"
             SSL="si"
-            # PUERTO_SSL_USADO se actualiza dentro de fn_instalar_web_con_ssl
+            # PUERTO_SSL_USADO se actualiza dentro de fn_instalar_web_con_ssl o por ahi
         else
             fn_info "Iniciando aprovisionamiento WEB para $NOMBRE en puerto $PUERTO..."
             case "$TIPO" in
@@ -780,7 +780,9 @@ fn_instalar_servicio_hibrido() {
                     ;;
                 "tomcat")
                     urpmi --auto tomcat 2>/dev/null
-                    sed -i "s/Connector port=\"[0-9]*\"/Connector port=\"$PUERTO\"/" /etc/tomcat/server.xml 2>/dev/null
+                    local TC_CONF="/etc/tomcat/server.xml"
+                    [ ! -f "$TC_CONF" ] && TC_CONF="/etc/tomcat9/server.xml"
+                    [ -f "$TC_CONF" ] && sed -i "s/port=\"8080\"/port=\"$PUERTO\" address=\"0.0.0.0\"/g" "$TC_CONF" 2>/dev/null
                     systemctl enable --now tomcat 2>/dev/null
                     ;;
             esac
@@ -794,18 +796,14 @@ fn_instalar_servicio_hibrido() {
         read -p "Archivo a descargar: " FILE_NAME
         mkdir -p "$INSTALL_DIR"
         fn_ftp_descargar "${REMOTO}${FILE_NAME}" "${INSTALL_DIR}/${FILE_NAME}"
-        return # Descarga no requiere verificacion de escucha
+        return
     fi
 
-    # Firewall y Verificacion (Si no fue solo descarga)
+    # Firewall y Verificacion
     iptables -I INPUT -p tcp --dport "$PUERTO" -j ACCEPT 2>/dev/null
-    [ "$SSL" = "si" ] && iptables -I INPUT -p tcp --dport "$PUERTO_SSL_USADO" -j ACCEPT 2>/dev/null
     
-    sleep 2
-    fn_verificar_servicio_http "$NOMBRE" "$PUERTO" "$SSL" "$PUERTO_SSL_USADO"
+    fn_verificar_servicio_http "$NOMBRE" "$PUERTO" "$SSL"
 }
-
-
 
 # -----------------------------------------------------------------------------
 # BLOQUE 7: SSL PARA VSFTPD (FTPS)
@@ -820,38 +818,31 @@ fn_configurar_ftps() {
         urpmi --auto --quiet vsftpd 2>/dev/null
     fi
 
-    # Detener shorewall si existe (igual que practica 5)
     systemctl stop shorewall 2>/dev/null
     shorewall clear 2>/dev/null
 
-    # Crear directorio secure_chroot_dir
     mkdir -p /var/run/vsftpd/empty
     chmod 755 /var/run/vsftpd/empty
 
-    # Asegurar shells validos para vsftpd
     for shell in "/sbin/nologin" "/bin/false"; do
         grep -q "$shell" /etc/shells || echo "$shell" >> /etc/shells
     done
 
-    # Detectar IP del servidor
     local SERVER_IP
     SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
     fn_info "IP del servidor: ${SERVER_IP}"
 
-    # Asegurar que el usuario u1 existe y tiene la clave correcta
     fn_info "Asegurando usuario ${FTP_USER}..."
     if ! id "$FTP_USER" &>/dev/null; then
         useradd -m -s /bin/bash "$FTP_USER" 2>/dev/null
     fi
     echo "${FTP_USER}:${FTP_PASS}" | chpasswd
     
-    # Remover de la lista de bloqueados si existe
     sed -i "/^${FTP_USER}$/d" /etc/ftpusers 2>/dev/null
 
     mkdir -p "${SSL_DIR}/vsftpd"
     fn_sec "Generando certificado SSL para vsftpd..."
 
-    # Generar certificado compatible con vsftpd 3.0.5 Mageia + GnuTLS
     openssl req -x509 -nodes -days 365 \
         -newkey rsa:2048 \
         -keyout "${SSL_DIR}/vsftpd/vsftpd.key" \
@@ -859,12 +850,10 @@ fn_configurar_ftps() {
         -subj "/C=MX/ST=Sinaloa/L=Culiacan/O=Reprobados/OU=FTP/CN=${SERVER_IP}" \
         -sha256 2>/dev/null
 
-    # Combinar en .pem (requerido por algunas versiones de vsftpd)
     cat "${SSL_DIR}/vsftpd/vsftpd.key" "${SSL_DIR}/vsftpd/vsftpd.crt" \
         > "${SSL_DIR}/vsftpd/vsftpd.pem"
     chmod 600 "${SSL_DIR}/vsftpd/vsftpd.key"
     
-    # Backup conf original
     VSFTPD_CONF="/etc/vsftpd/vsftpd.conf"
     [ -f "$VSFTPD_CONF" ] && cp "$VSFTPD_CONF" "${VSFTPD_CONF}.bak"
 
@@ -913,7 +902,6 @@ seccomp_sandbox=NO
 check_shell=NO
 VSFTPDEOF
 
-    # Crear jerarquia solicitada: u1, http
     local FTP_ROOT="/var/ftp_p7"
     mkdir -p "${FTP_ROOT}/u1"
     mkdir -p "${FTP_ROOT}/general"
@@ -921,7 +909,6 @@ VSFTPDEOF
     mkdir -p "${FTP_ROOT}/http/Linux/nginx"
     mkdir -p "${FTP_ROOT}/http/Linux/tomcat"
     
-    # Permisos finales
     chown root:root "$FTP_ROOT"
     chmod 555 "$FTP_ROOT"
     chown -R ${FTP_USER}:ftp "${FTP_ROOT}/u1"
@@ -929,17 +916,12 @@ VSFTPDEOF
     chown -R ftp:ftp "${FTP_ROOT}/http"
     chmod 777 "${FTP_ROOT}/http"
 
-    # Abrir puertos en firewall
     iptables -I INPUT -p tcp --dport 21 -j ACCEPT 2>/dev/null
     iptables -I INPUT -p tcp --dport 20 -j ACCEPT 2>/dev/null
     iptables -I INPUT -p tcp --dport 10000:10100 -j ACCEPT 2>/dev/null
 
     systemctl stop vsftpd 2>/dev/null
-    if systemctl start vsftpd; then
-        fn_sec "vsftpd reiniciado con FTPS activado con exito."
-    else
-        fn_err "vsftpd no pudo iniciar."
-    fi
+    systemctl start vsftpd 2>/dev/null
 
     RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[vsftpd] FTPS activado | Cert: ${SSL_DIR}/vsftpd/vsftpd.crt"
 }
@@ -1023,7 +1005,6 @@ HTMLEOF
 
             systemctl enable httpd 2>/dev/null
             systemctl restart httpd 2>/dev/null
-            fn_ok "Apache instalado y premium."
             RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Apache] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
             ;;
         nginx)
@@ -1105,7 +1086,6 @@ HTMLEOF
 
             systemctl enable nginx 2>/dev/null
             systemctl restart nginx 2>/dev/null
-            fn_ok "Nginx instalado y premium."
             RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Nginx] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
             ;;
         tomcat)
@@ -1124,20 +1104,14 @@ HTMLEOF
                 [ -z "$PUERTO_SSL" ] && PUERTO_SSL="8443"
                 SSL_LABEL="Si (puerto $PUERTO_SSL)"
                 
-                # Configurar SSL en server.xml de Tomcat local
                 local TC_CONF="/etc/tomcat/server.xml"
                 [ ! -f "$TC_CONF" ] && TC_CONF="/etc/tomcat9/server.xml"
                 
                 if [ -f "$TC_CONF" ]; then
-                    # Cambiar puerto HTTP (por defecto 8080) al puerto que pidio el usuario
-                    # Tambien nos aseguramos que escuche en 0.0.0.0 (todas las interfaces)
                     sed -i "s/port=\"8080\"/port=\"$PUERTO\" address=\"0.0.0.0\"/g" "$TC_CONF" 2>/dev/null
-                    # Cambiar redirectPort al puerto SSL que elijio el usuario
                     sed -i "s/redirectPort=\"8443\"/redirectPort=\"$PUERTO_SSL\"/g" "$TC_CONF" 2>/dev/null
-                    # Añadir el conector SSL
                     sed -i "s|</Service>|    <Connector port=\"$PUERTO_SSL\" address=\"0.0.0.0\" protocol=\"org.apache.coyote.http11.Http11NioProtocol\"\n               SSLEnabled=\"true\" scheme=\"https\" secure=\"true\"\n               keystoreFile=\"${CERT_DIR}/server.crt\"\n               keystorePass=\"practica7\"\n               clientAuth=\"false\" sslProtocol=\"TLS\" />\n</Service>|" "$TC_CONF"
                 fi
-                iptables -I INPUT -p tcp --dport "$PUERTO" -j ACCEPT 2>/dev/null
                 iptables -I INPUT -p tcp --dport "$PUERTO_SSL" -j ACCEPT 2>/dev/null
             fi
 
@@ -1146,7 +1120,7 @@ HTMLEOF
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Tomcat - Activo</title>
+    <title>IIS - Activo</title>
     <style>
         body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eee;
                display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
@@ -1162,7 +1136,7 @@ HTMLEOF
     <div class="card">
         <h1>IIS - Windows Server</h1>
         <div>
-            <span class="badge">Servidor: IIS (Tomcat)</span>
+            <span class="badge">Servidor: IIS</span>
             <span class="badge">Puerto HTTP: ${PUERTO}</span>
             <span class="badge">SSL: ${SSL_LABEL}</span>
         </div>
@@ -1177,7 +1151,6 @@ HTMLEOF
 
             systemctl enable tomcat 2>/dev/null
             systemctl restart tomcat 2>/dev/null
-            fn_ok "Tomcat instalado y premium."
             RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Tomcat] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
             ;;
     esac
@@ -1192,8 +1165,7 @@ fn_verificar_servicio_http() {
     local PUERTO="$2"
     local SSL="$3"
     echo -e "\n${CYAN}Verificando ${NOMBRE}...${NC}"
-    fn_info "Esperando 5 segundos para que el servicio inicie bien..."
-    sleep 5
+    sleep 3
     if curl -sk --connect-timeout 5 "http://127.0.0.1:${PUERTO}" -o /dev/null; then
         fn_ok "${NOMBRE} responde HTTP en puerto ${PUERTO}"
     else
