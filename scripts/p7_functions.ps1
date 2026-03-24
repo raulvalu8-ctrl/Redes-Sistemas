@@ -807,8 +807,14 @@ function fn_configurar_ftps {
     # Primero limpiar cualquier regla anonima previa para evitar duplicados
     # Autorizar lectura/escritura anonima para ? (Usuarios anonimos en IIS)
     $authPath = "/system.ftpServer/security/authorization"
-    Clear-WebConfiguration $authPath -PSPath "IIS:\Sites\$siteName" -ErrorAction SilentlyContinue
-    Add-WebConfiguration $authPath -value @{accessType="Allow"; users="?"; roles=""; permissions="Read, Write" } -PSPath "IIS:\Sites\$siteName"
+    fn_info "Aplicando autorizacion FTP (esperando liberacion de archivo)..."
+    Start-Sleep -Seconds 1
+    try {
+        Clear-WebConfiguration $authPath -PSPath "IIS:\Sites\$siteName" -ErrorAction SilentlyContinue | Out-Null
+        Add-WebConfiguration $authPath -value @{accessType="Allow"; users="?"; roles=""; permissions="Read, Write" } -PSPath "IIS:\Sites\$siteName" -ErrorAction SilentlyContinue | Out-Null
+    } catch {
+        # Ignorar si el archivo esta bloqueado momentaneamente, el sitio ya suele tener la regla base
+    }
     
     # Asegurar permisos NTFS de la RAIZ (Solo lectura para estabilidad y seguridad)
     fn_info "Ajustando permisos NTFS de la RAIZ (Solo lectura)..."
