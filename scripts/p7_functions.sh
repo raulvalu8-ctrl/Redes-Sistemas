@@ -808,17 +808,7 @@ anon_mkdir_write_enable=YES
 anon_other_write_enable=YES
 anon_world_readable_only=YES
 
-# FTPS - SSL/TLS - SOLO PARA USUARIOS REGISTRADOS (u1)
-ssl_enable=NO
-user_config_dir=/etc/vsftpd/user_config
-allow_anon_ssl=NO
-force_anon_data_ssl=NO
-force_anon_logins_ssl=NO
-VSFTPDEOF
-
-    # Crear configuracion especifica para u1 (CON SSL)
-    mkdir -p /etc/vsftpd/user_config
-    cat > /etc/vsftpd/user_config/${FTP_USER} <<U1EOF
+# FTPS - SSL/TLS - Practica 7
 ssl_enable=YES
 rsa_cert_file=${SSL_DIR}/vsftpd/vsftpd.crt
 rsa_private_key_file=${SSL_DIR}/vsftpd/vsftpd.key
@@ -832,7 +822,11 @@ ssl_ciphers=HIGH
 implicit_ssl=NO
 seccomp_sandbox=NO
 debug_ssl=YES
-U1EOF
+allow_anon_ssl=NO
+force_anon_data_ssl=NO
+force_anon_logins_ssl=NO
+VSFTPDEOF
+
 
     # Crear jerarquia solicitada: u1, http
     local FTP_ROOT="/var/ftp_p7"
