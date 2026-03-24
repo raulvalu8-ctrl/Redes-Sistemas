@@ -805,16 +805,15 @@ function fn_configurar_ftps {
     
     # Autorizar lectura anonima (?)
     # Primero limpiar cualquier regla anonima previa para evitar duplicados
-    # Autorizar lectura/escritura anonima para ?
+    # Autorizar lectura/escritura anonima para ? (Usuarios anonimos en IIS)
     $authPath = "/system.ftpServer/security/authorization"
-    Clear-WebConfiguration $authPath -PSPath "IIS:\Sites\$siteName"
+    Clear-WebConfiguration $authPath -PSPath "IIS:\Sites\$siteName" -ErrorAction SilentlyContinue
     Add-WebConfiguration $authPath -value @{accessType="Allow"; users="?"; roles=""; permissions="Read, Write" } -PSPath "IIS:\Sites\$siteName"
     
-    # Asegurar permisos NTFS de la RAIZ (Solo lectura para que vsftpd/iis no se quejen y por seguridad)
+    # Asegurar permisos NTFS de la RAIZ (Solo lectura para estabilidad y seguridad)
     fn_info "Ajustando permisos NTFS de la RAIZ (Solo lectura)..."
     $acl = Get-Acl $sitePath
-    $permission = "Everyone","ReadAndExecute","Allow"
-    $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule($permission)
+    $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule($sidEveryone, "ReadAndExecute", "ContainerInherit,ObjectInherit", "None", "Allow")
     $acl.SetAccessRule($accessRule)
     Set-Acl $sitePath $acl
     
