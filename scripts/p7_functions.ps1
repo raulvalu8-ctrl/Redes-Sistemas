@@ -691,12 +691,9 @@ function fn_configurar_ftps {
     if (!(Test-Path $sitePath)) { New-Item -ItemType Directory -Force -Path $sitePath | Out-Null }
     
     # Limpieza de carpetas no deseadas
-    # LOCALIZACION: Obtener nombres de 'Everyone' y 'Users' de forma universal usando SIDs
-    $sidEveryone = New-Object System.Security.Principal.SecurityIdentifier("S-1-1-0") # Everyone / Todos
-    $nameEveryone = $sidEveryone.Translate([System.Security.Principal.NTAccount]).Value
-    
-    $sidUsers = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-32-545") # Builtin Users / Usuarios
-    $nameUsers = $sidUsers.Translate([System.Security.Principal.NTAccount]).Value
+    # UNIVERSAL: SIDs para Everyone y Users (Funciona en todos los idiomas)
+    $sidEveryone = New-Object System.Security.Principal.SecurityIdentifier("S-1-1-0")
+    $sidUsers = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-32-545")
     
     fn_info "Limpiando carpetas basura (pkg, pub, grupos)..."
     $junk = @("pkg", "pub", "grupos")
@@ -716,17 +713,17 @@ function fn_configurar_ftps {
         if ($f -eq "u1") {
             $acl = Get-Acl $fullPath
             # Quitar cualquier permiso Modify de Everyone
-            $everyoneRule = New-Object System.Security.AccessControl.FileSystemAccessRule($nameEveryone, "ReadAndExecute", "ContainerInherit,ObjectInherit", "None", "Allow")
+            $everyoneRule = New-Object System.Security.AccessControl.FileSystemAccessRule($sidEveryone, "ReadAndExecute", "ContainerInherit,ObjectInherit", "None", "Allow")
             $acl.SetAccessRule($everyoneRule)
             
             # Pero el usuario 'u1' (o Users) SI debe poder escribir en su propia carpeta
-            $u1Rule = New-Object System.Security.AccessControl.FileSystemAccessRule($nameUsers, "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
+            $u1Rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sidUsers, "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
             $acl.AddAccessRule($u1Rule)
             Set-Acl $fullPath $acl
         } else {
             # General y Http (bases) tambien solo lectura para everyone
             $acl = Get-Acl $fullPath
-            $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($nameEveryone, "ReadAndExecute", "ContainerInherit,ObjectInherit", "None", "Allow")
+            $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sidEveryone, "ReadAndExecute", "ContainerInherit,ObjectInherit", "None", "Allow")
             $acl.SetAccessRule($rule)
             Set-Acl $fullPath $acl
         }
@@ -760,11 +757,11 @@ function fn_configurar_ftps {
     
     # PERMISOS DE LA RAIZ Y SUBFOLDERS: u1 (Users) puede TODO
     $acl_root = Get-Acl $sitePath
-    $u1_root_rule = New-Object System.Security.AccessControl.FileSystemAccessRule($nameUsers, "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
+    $u1_root_rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sidUsers, "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
     $acl_root.SetAccessRule($u1_root_rule)
     
     # Pero el PUBLICO (Anonimo) en la RAIZ solo puede leer
-    $pub_root_rule = New-Object System.Security.AccessControl.FileSystemAccessRule($nameEveryone, "ReadAndExecute", "ContainerInherit,ObjectInherit", "None", "Allow")
+    $pub_root_rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sidEveryone, "ReadAndExecute", "ContainerInherit,ObjectInherit", "None", "Allow")
     $acl_root.SetAccessRule($pub_root_rule)
     Set-Acl $sitePath $acl_root
     
@@ -780,7 +777,7 @@ function fn_configurar_ftps {
     foreach ($f in $installers) {
         $folderPath = "$sitePath\http\Windows\$f"
         $acl = Get-Acl $folderPath
-        $rule_anon = New-Object System.Security.AccessControl.FileSystemAccessRule($nameEveryone, "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
+        $rule_anon = New-Object System.Security.AccessControl.FileSystemAccessRule($sidEveryone, "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
         $acl.SetAccessRule($rule_anon)
         Set-Acl $folderPath $acl
     }
