@@ -691,16 +691,16 @@ function fn_configurar_ftps {
     if (!(Test-Path $sitePath)) { New-Item -ItemType Directory -Force -Path $sitePath | Out-Null }
     
     # Limpieza de carpetas no deseadas
-    fn_info "Limpiando carpetas basura (pkg, pub, grupos, general)..."
-    $junk = @("pkg", "pub", "grupos", "general")
+    fn_info "Limpiando carpetas basura (pkg, pub, grupos)..."
+    $junk = @("pkg", "pub", "grupos")
     foreach($j in $junk) {
         $jPath = Join-Path $sitePath $j
         if (Test-Path $jPath) { Remove-Item -Path $jPath -Recurse -Force -ErrorAction SilentlyContinue }
     }
     
-    # Crear jerarquia balanceada: u1, http
-    fn_info "Asegurando jerarquia limpia (/u1, /http/Windows)..."
-    $baseFolders = @("u1", "http\Windows")
+    # Crear jerarquia balanceada: u1, http, general
+    fn_info "Asegurando jerarquia limpia (/u1, /http/Windows, /general)..."
+    $baseFolders = @("u1", "http\Windows", "general")
     foreach($f in $baseFolders) {
         $fullPath = "$sitePath\$f"
         if (!(Test-Path $fullPath)) { New-Item -ItemType Directory -Path $fullPath -Force | Out-Null }

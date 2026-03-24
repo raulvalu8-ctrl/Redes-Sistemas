@@ -833,13 +833,14 @@ VSFTPDEOF
     # Asegurar que la ruta vieja (/var/ftp) no interfiera 
     # (No la borramos por si el usuario tiene cosas ahi, pero el FTP ya no la usa)
     
-    fn_info "Creando jerarquia limpia (${FTP_ROOT}/{u1, http/Linux})..."
+    fn_info "Creando jerarquia limpia (${FTP_ROOT}/{u1, http/Linux, general})..."
     
     # Asegurar que el contenedor base existe
     mkdir -p "${FTP_ROOT}"
     
     # Crear solo lo solicitado
     mkdir -p "${FTP_ROOT}/u1"
+    mkdir -p "${FTP_ROOT}/general"
     mkdir -p "${FTP_ROOT}/http/Linux/apache"
     mkdir -p "${FTP_ROOT}/http/Linux/nginx"
     mkdir -p "${FTP_ROOT}/http/Linux/tomcat"
