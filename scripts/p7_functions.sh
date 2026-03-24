@@ -1130,9 +1130,12 @@ HTMLEOF
                 
                 if [ -f "$TC_CONF" ]; then
                     # Cambiar puerto HTTP (por defecto 8080) al puerto que pidio el usuario
-                    sed -i "s/port=\"8080\"/port=\"$PUERTO\"/g" "$TC_CONF" 2>/dev/null
+                    # Tambien nos aseguramos que escuche en 0.0.0.0 (todas las interfaces)
+                    sed -i "s/port=\"8080\"/port=\"$PUERTO\" address=\"0.0.0.0\"/g" "$TC_CONF" 2>/dev/null
+                    # Cambiar redirectPort al puerto SSL que elijio el usuario
+                    sed -i "s/redirectPort=\"8443\"/redirectPort=\"$PUERTO_SSL\"/g" "$TC_CONF" 2>/dev/null
                     # Añadir el conector SSL
-                    sed -i "s|</Service>|    <Connector port=\"$PUERTO_SSL\" protocol=\"org.apache.coyote.http11.Http11NioProtocol\"\n               SSLEnabled=\"true\" scheme=\"https\" secure=\"true\"\n               keystoreFile=\"${CERT_DIR}/server.crt\"\n               keystorePass=\"practica7\"\n               clientAuth=\"false\" sslProtocol=\"TLS\" />\n</Service>|" "$TC_CONF"
+                    sed -i "s|</Service>|    <Connector port=\"$PUERTO_SSL\" address=\"0.0.0.0\" protocol=\"org.apache.coyote.http11.Http11NioProtocol\"\n               SSLEnabled=\"true\" scheme=\"https\" secure=\"true\"\n               keystoreFile=\"${CERT_DIR}/server.crt\"\n               keystorePass=\"practica7\"\n               clientAuth=\"false\" sslProtocol=\"TLS\" />\n</Service>|" "$TC_CONF"
                 fi
                 iptables -I INPUT -p tcp --dport "$PUERTO" -j ACCEPT 2>/dev/null
                 iptables -I INPUT -p tcp --dport "$PUERTO_SSL" -j ACCEPT 2>/dev/null
