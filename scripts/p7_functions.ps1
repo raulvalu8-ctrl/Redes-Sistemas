@@ -6,7 +6,7 @@ $script:FTP_SERVER = "192.168.5.129"
 $script:FTP_PORT = "21"
 $script:FTP_USER = "u1"
 $script:FTP_PASS = "alumno1"
-$script:FTP_BASE_PATH = ""
+$script:FTP_BASE_PATH = "/http/Linux"
 $script:DOMINIO = "192.168.5.133"
 $script:SSL_DIR = "C:\ssl_practica7"
 $script:RESUMEN_INSTALACIONES = @()
@@ -687,14 +687,23 @@ function fn_configurar_ftps {
     
     Import-Module WebAdministration -ErrorAction SilentlyContinue
     
-    $sitePath = "C:\inetpub\ftproot\pkg\Linux"
+    $sitePath = "C:\inetpub\ftproot"
     if (!(Test-Path $sitePath)) { New-Item -ItemType Directory -Force -Path $sitePath | Out-Null }
     
-    # Replicar estructura de Linux en Windows FTPS
-    fn_info "Replicando estructura de carpetas /pkg/Linux en IIS..."
+    # Crear jerarquia solicitada: general, u1, http
+    fn_info "Creando jerarquia de carpetas solicitada (/general, /u1, /http/Windows)..."
+    $baseFolders = @("general", "u1", "http\Windows")
+    foreach($f in $baseFolders) {
+        $fullPath = Join-Join-Path $sitePath $f -ErrorAction SilentlyContinue 2>$null # Hack for subpaths
+        $fullPath = "$sitePath\$f"
+        if (!(Test-Path $fullPath)) { New-Item -ItemType Directory -Path $fullPath -Force | Out-Null }
+    }
+    
+    # Subcarpetas dentro de /http/Windows
+    $osPath = "$sitePath\http\Windows"
     $folders = @("apache", "nginx", "tomcat")
     foreach($f in $folders) {
-        $folderPath = Join-Path $sitePath $f
+        $folderPath = Join-Path $osPath $f
         if (!(Test-Path $folderPath)) { New-Item -ItemType Directory -Path $folderPath -Force | Out-Null }
         
         # Crear archivos ejecutables y zips de prueba
@@ -708,7 +717,7 @@ function fn_configurar_ftps {
         "Instalador $f Windows Server" | Out-File (Join-Path $folderPath $exeName) -Force
         "Instalador $f Zip Server" | Out-File (Join-Path $folderPath $zipName) -Force
     }
-    "Servidor FTP Windows Server - Archivos listos" | Out-File (Join-Path $sitePath "info.txt") -Force
+    "Sistema de Archivos P7 - IIS listo" | Out-File (Join-Path $sitePath "info.txt") -Force
     fn_ok "Estructura de directorios en IIS creada y poblada."
     
     $siteName = "IIS_P7_FTP"
