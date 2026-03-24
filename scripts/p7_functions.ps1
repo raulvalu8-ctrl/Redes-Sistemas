@@ -704,6 +704,20 @@ function fn_configurar_ftps {
     foreach($f in $baseFolders) {
         $fullPath = "$sitePath\$f"
         if (!(Test-Path $fullPath)) { New-Item -ItemType Directory -Path $fullPath -Force | Out-Null }
+        
+        # AJUSTE: Por defecto estas carpetas NO son escribibles por anonimos (Solo lectura para Everyone)
+        $acl = Get-Acl $fullPath
+        $p = "Everyone","ReadAndExecute","Allow"
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($p)
+        $acl.SetAccessRule($rule)
+        
+        # Pero el usuario 'u1' SI debe poder escribir en su propia carpeta
+        if ($f -eq "u1") {
+            $u1P = "Users","Modify","Allow" # O el usuario u1 especifico si existiera localmente
+            $u1Rule = New-Object System.Security.AccessControl.FileSystemAccessRule($u1P)
+            $acl.AddAccessRule($u1Rule)
+        }
+        Set-Acl $fullPath $acl
     }
     
     # Subcarpetas dentro de /http/Windows (Acceso de Escritura para Anonimo)
@@ -763,8 +777,8 @@ function fn_configurar_ftps {
     Clear-WebConfiguration $authPath -PSPath "IIS:\Sites\$siteName"
     Add-WebConfiguration $authPath -value @{accessType="Allow"; users="?"; roles=""; permissions="Read, Write" } -PSPath "IIS:\Sites\$siteName"
     
-    # Asegurar permisos NTFS para el proceso de IIS FTP
-    fn_info "Ajustando permisos NTFS para lectura publica..."
+    # Asegurar permisos NTFS de la RAIZ (Solo lectura para que vsftpd/iis no se quejen y por seguridad)
+    fn_info "Ajustando permisos NTFS de la RAIZ (Solo lectura)..."
     $acl = Get-Acl $sitePath
     $permission = "Everyone","ReadAndExecute","Allow"
     $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule($permission)
@@ -773,8 +787,8 @@ function fn_configurar_ftps {
     
     Start-Website -Name $siteName -ErrorAction SilentlyContinue
     
-    fn_ok "FTPS (IIS) Completado: $script:DOMINIO (Acepta TLS y ANONIMO)."
-    $script:RESUMEN_INSTALACIONES += "[IIS FTP] FTPS Activo | Anonimo: SI | Puerto: 21"
+    fn_ok "FTPS (IIS) Completado: $script:DOMINIO (Escritura SOLO en instaladores)."
+    $script:RESUMEN_INSTALACIONES += "[IIS FTP] FTPS Activo | Escritura: SOLO INSTALADORES | Puerto: 21"
 }
 
 function fn_mostrar_resumen {
