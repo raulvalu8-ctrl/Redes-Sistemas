@@ -825,12 +825,18 @@ VSFTPDEOF
     # Crear jerarquia solicitada: general, u1, http
     local FTP_ROOT="/var/ftp"
     
-    # Limpieza de carpetas no deseadas
-    fn_info "Limpiando carpetas basura en Mageia (pkg, pub, grupos, general)..."
-    rm -rf "${FTP_ROOT}/pub" "${FTP_ROOT}/pkg" "${FTP_ROOT}/grupos" "${FTP_ROOT}/general" 2>/dev/null
+    # Limpieza AGRESIVA de carpetas no deseadas
+    fn_info "Eliminando FORZOSAMENTE carpetas extra (pkg, pub, grupos, general)..."
+    # Borrar posibles rutas duplicadas o antiguas
+    rm -rf /var/ftp/pub /var/ftp/pkg /var/ftp/grupos /var/ftp/general 2>/dev/null
+    rm -rf /http/Linux 2>/dev/null # Limpiar rastro de la ruta vieja en la raiz
     
     fn_info "Asegurando jerarquia limpia (${FTP_ROOT}/{u1, http/Linux})..."
     
+    # Asegurar que el contenedor base existe
+    mkdir -p "${FTP_ROOT}"
+    
+    # Crear solo lo solicitado
     mkdir -p "${FTP_ROOT}/u1"
     mkdir -p "${FTP_ROOT}/http/Linux/apache"
     mkdir -p "${FTP_ROOT}/http/Linux/nginx"
