@@ -1129,8 +1129,12 @@ HTMLEOF
                 [ ! -f "$TC_CONF" ] && TC_CONF="/etc/tomcat9/server.xml"
                 
                 if [ -f "$TC_CONF" ]; then
+                    # Cambiar puerto HTTP (por defecto 8080) al puerto que pidio el usuario
+                    sed -i "s/port=\"8080\"/port=\"$PUERTO\"/g" "$TC_CONF" 2>/dev/null
+                    # Añadir el conector SSL
                     sed -i "s|</Service>|    <Connector port=\"$PUERTO_SSL\" protocol=\"org.apache.coyote.http11.Http11NioProtocol\"\n               SSLEnabled=\"true\" scheme=\"https\" secure=\"true\"\n               keystoreFile=\"${CERT_DIR}/server.crt\"\n               keystorePass=\"practica7\"\n               clientAuth=\"false\" sslProtocol=\"TLS\" />\n</Service>|" "$TC_CONF"
                 fi
+                iptables -I INPUT -p tcp --dport "$PUERTO" -j ACCEPT 2>/dev/null
                 iptables -I INPUT -p tcp --dport "$PUERTO_SSL" -j ACCEPT 2>/dev/null
             fi
 
@@ -1185,6 +1189,8 @@ fn_verificar_servicio_http() {
     local PUERTO="$2"
     local SSL="$3"
     echo -e "\n${CYAN}Verificando ${NOMBRE}...${NC}"
+    fn_info "Esperando 5 segundos para que el servicio inicie bien..."
+    sleep 5
     if curl -sk --connect-timeout 5 "http://127.0.0.1:${PUERTO}" -o /dev/null; then
         fn_ok "${NOMBRE} responde HTTP en puerto ${PUERTO}"
     else
