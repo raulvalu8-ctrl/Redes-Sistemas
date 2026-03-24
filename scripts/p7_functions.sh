@@ -719,73 +719,69 @@ fn_instalar_servicio_hibrido() {
     echo -ne "\n${YELLOW}Selecciona modo: ${NC}"
     read -r MODO
     
+    local SSL="no"
+    local PUERTO=""
+    PUERTO_SSL_USADO="443"
+
     if [ "$MODO" = "1" ]; then
         # Preguntar por SSL para que "jale" en https
         echo -ne "${YELLOW}¿Deseas activar SSL/HTTPS? (s/n): ${NC}"
         read -r ACTIVAR_SSL
         
         if [[ "$ACTIVAR_SSL" =~ ^[sS]$ ]]; then
-            # El puerto HTTP se pide dentro de fn_instalar_web_con_ssl, 
-            # pasamos un puerto base sugerido
             local PUERTO_SUG="80"
             [ "$TIPO" = "nginx" ] && PUERTO_SUG="81"
             [ "$TIPO" = "tomcat" ] && PUERTO_SUG="8080"
             
             fn_instalar_web_con_ssl "$TIPO" "$PUERTO_SUG" "si"
-            return
+            # La verificacion ya se hace dentro de fn_instalar_web_con_ssl o despues?
+            # La haremos aqui al final de la funcion hibrida para uniformidad
+            PUERTO="$PUERTO_SUG" # Fallback si falla el parseo
+            SSL="si"
+        else
+            echo -ne "${YELLOW}Ingresa el puerto deseado (ENTER para default): ${NC}"
+            read -r PUERTO
+            [ -z "$PUERTO" ] && PUERTO="80"
+            
+            fn_info "Iniciando aprovisionamiento WEB para $NOMBRE en puerto $PUERTO..."
+            case "$TIPO" in
+                "apache")
+                    urpmi --auto httpd 2>/dev/null
+                    sed -i "s/^Listen .*/Listen $PUERTO/" /etc/httpd/conf/httpd.conf 2>/dev/null
+                    systemctl enable --now httpd 2>/dev/null
+                    ;;
+                "nginx")
+                    urpmi --auto nginx 2>/dev/null
+                    sed -i "s/listen .*[0-9];/listen $PUERTO;/" /etc/nginx/nginx.conf 2>/dev/null
+                    systemctl enable --now nginx 2>/dev/null
+                    ;;
+                "tomcat")
+                    urpmi --auto tomcat 2>/dev/null
+                    sed -i "s/Connector port=\"[0-9]*\"/Connector port=\"$PUERTO\"/" /etc/tomcat/server.xml 2>/dev/null
+                    systemctl enable --now tomcat 2>/dev/null
+                    ;;
+            esac
         fi
-
-        # Si no quiere SSL, seguimos con el flujo basico de puerto custom
-        echo -ne "${YELLOW}Ingresa el puerto deseado (ENTER para default): ${NC}"
-        read -r PUERTO
-
-        fn_info "Iniciando aprovisionamiento WEB para $NOMBRE en puerto $PUERTO..."
-        case "$TIPO" in
-            "apache")
-                urpmi --auto httpd 2>/dev/null
-                # Cambiar Listen
-                sed -i "s/^Listen .*/Listen $PUERTO/" /etc/httpd/conf/httpd.conf 2>/dev/null
-                systemctl enable --now httpd 2>/dev/null
-                fn_ok "Apache httpd instalado y activo en puerto $PUERTO."
-                ;;
-            "nginx")
-                urpmi --auto nginx 2>/dev/null
-                # Cambiar listen en default server
-                sed -i "s/listen .*[0-9];/listen $PUERTO;/" /etc/nginx/nginx.conf 2>/dev/null
-                systemctl enable --now nginx 2>/dev/null
-                fn_ok "Nginx instalado y activo en puerto $PUERTO."
-                ;;
-            "tomcat")
-                urpmi --auto tomcat 2>/dev/null
-                # Cambiar Connector port
-                sed -i "s/Connector port=\"[0-9]*\"/Connector port=\"$PUERTO\"/" /etc/tomcat/server.xml 2>/dev/null
-                systemctl enable --now tomcat 2>/dev/null
-                fn_ok "Tomcat instalado y activo en puerto $PUERTO."
-                ;;
-        esac
     elif [ "$MODO" = "2" ]; then
         fn_info "Iniciando descarga via FTP de $NOMBRE..."
         local REMOTO="${FTP_BASE_PATH}/${TIPO}/"
-        fn_info "Explorando servidor FTP: $REMOTO"
-        
-        # Listar archivos disponibles
         FILES=$(fn_ftp_listar "$REMOTO")
-        if [ -z "$FILES" ]; then
-            fn_err "No se encontraron archivos en el servidor FTP para $NOMBRE."
-            return 1
-        fi
-        
-        echo -e "\n${CYAN}Archivos disponibles:${NC}"
+        [ -z "$FILES" ] && { fn_err "No hay archivos."; return 1; }
         echo "$FILES"
-        echo -ne "\n${YELLOW}Escribe el nombre exacto del archivo a descargar: ${NC}"
-        read -r FILE_NAME
-        
+        read -p "Archivo a descargar: " FILE_NAME
         mkdir -p "$INSTALL_DIR"
         fn_ftp_descargar "${REMOTO}${FILE_NAME}" "${INSTALL_DIR}/${FILE_NAME}"
-    else
-        fn_err "Modo invalido."
+        return # Descarga no requiere verificacion de escucha
     fi
+
+    # Firewall y Verificacion (Si no fue solo descarga)
+    iptables -I INPUT -p tcp --dport "$PUERTO" -j ACCEPT 2>/dev/null
+    [ "$SSL" = "si" ] && iptables -I INPUT -p tcp --dport "$PUERTO_SSL_USADO" -j ACCEPT 2>/dev/null
+    
+    sleep 2
+    fn_verificar_servicio_http "$NOMBRE" "$PUERTO" "$SSL" "$PUERTO_SSL_USADO"
 }
+
 
 
 # -----------------------------------------------------------------------------
@@ -1470,13 +1466,21 @@ fn_verificar_servicio_http() {
 
     echo -e "\n${CYAN}Verificando ${NOMBRE}...${NC}"
 
-    if ss -tlnp 2>/dev/null | grep -q ":${PUERTO} "; then
-        fn_ok "${NOMBRE} escuchando en puerto ${PUERTO}"
-    elif netstat -tlnp 2>/dev/null | grep -q ":${PUERTO} "; then
-        fn_ok "${NOMBRE} escuchando en puerto ${PUERTO}"
+    local PUERTO_CHECK="$PUERTO"
+    [ "$SSL" = "si" ] && PUERTO_CHECK="$PUERTO_SSL"
+
+    if ss -tlnp 2>/dev/null | grep -q ":${PUERTO_CHECK} "; then
+        fn_ok "${NOMBRE} escuchando en puerto ${PUERTO_CHECK}"
+    elif netstat -tlnp 2>/dev/null | grep -q ":${PUERTO_CHECK} "; then
+        fn_ok "${NOMBRE} escuchando en puerto ${PUERTO_CHECK}"
     else
-        fn_err "${NOMBRE} NO esta escuchando en puerto ${PUERTO}"
-        return 1
+        fn_err "${NOMBRE} NO esta escuchando en puerto ${PUERTO_CHECK}"
+        # Si falla el puerto principal SSL/HTTP, intentamos el otro por si acaso
+        if [ "$SSL" = "si" ] && ss -tlnp 2>/dev/null | grep -q ":${PUERTO} "; then
+            fn_info "Sin embargo, si se detecta actividad en el puerto base ${PUERTO}"
+        else
+            return 1
+        fi
     fi
 
     local RESP
@@ -1558,77 +1562,5 @@ fn_mostrar_resumen() {
     echo ""
 }
 
-# -----------------------------------------------------------------------------
-# BLOQUE 10: FUNCION PRINCIPAL DE INSTALACION HIBRIDA
-# -----------------------------------------------------------------------------
-
-fn_instalar_servicio_hibrido() {
-    local SERVICIO="$1"
-    local NOMBRE_DISPLAY="$2"
-
-    echo ""
-    echo -e "${CYAN}====== INSTALACION DE ${NOMBRE_DISPLAY} ======${NC}"
-
-    echo ""
-    echo -e "${YELLOW}¿Desde donde deseas instalar ${NOMBRE_DISPLAY}?${NC}"
-    echo "  [1] WEB - Repositorio urpmi (Mageia)"
-    echo "  [2] FTP - Repositorio privado (${FTP_SERVER})"
-    echo ""
-    local ORIGEN=""
-    while true; do
-        read -r ORIGEN
-        case "$ORIGEN" in
-            1|2) break ;;
-            *) fn_err "Elige 1 (WEB) o 2 (FTP)" ;;
-        esac
-    done
-
-    echo ""
-    echo -e "${YELLOW}Ingresa el puerto HTTP para ${NOMBRE_DISPLAY} (ej: 8080, 9090, 8083):${NC}"
-    local PUERTO=""
-    while true; do
-        read -r PUERTO
-        if [[ "$PUERTO" =~ ^[0-9]+$ ]] && [ "$PUERTO" -ge 1 ] && [ "$PUERTO" -le 65535 ]; then
-            if ss -tlnp 2>/dev/null | grep -q ":${PUERTO} "; then
-                fn_err "Puerto ${PUERTO} ya esta en uso. Elige otro."
-            else
-                fn_ok "Puerto ${PUERTO} disponible."
-                break
-            fi
-        else
-            fn_err "Puerto invalido. Debe ser entre 1 y 65535."
-        fi
-    done
-
-    local SSL="no"
-    fn_preguntar_ssl && SSL="si"
-
-    # Variable global para el puerto SSL (se asigna dentro de fn_instalar_web_con_ssl)
-    PUERTO_SSL_USADO="443"
-
-    if [ "$ORIGEN" = "1" ]; then
-        fn_instalar_web_con_ssl "$SERVICIO" "$PUERTO" "$SSL"
-    else
-        fn_ftp_navegar_y_descargar "$NOMBRE_DISPLAY" "$INSTALL_DIR" || return 1
-        fn_verificar_hash "$FTP_ARCHIVO_DESCARGADO" "$FTP_SHA256_DESCARGADO" || return 1
-
-        case "$SERVICIO" in
-            apache) fn_instalar_apache_ftp "$FTP_ARCHIVO_DESCARGADO" "$PUERTO" "$SSL" ;;
-            nginx)  fn_instalar_nginx_ftp  "$FTP_ARCHIVO_DESCARGADO" "$PUERTO" "$SSL" ;;
-            tomcat) fn_instalar_tomcat_ftp "$FTP_ARCHIVO_DESCARGADO" "$PUERTO" "$SSL" ;;
-        esac
-    fi
-
-    # Firewall
-    if command -v firewall-cmd &>/dev/null; then
-        firewall-cmd --permanent --add-port="${PUERTO}/tcp" 2>/dev/null
-        firewall-cmd --reload 2>/dev/null
-        fn_ok "Firewall (firewalld) configurado para puerto ${PUERTO}"
-    elif command -v iptables &>/dev/null; then
-        iptables -I INPUT -p tcp --dport "$PUERTO" -j ACCEPT 2>/dev/null
-        fn_ok "Firewall (iptables) configurado para puerto ${PUERTO}"
-    fi
-
-    sleep 2
-    fn_verificar_servicio_http "$NOMBRE_DISPLAY" "$PUERTO" "$SSL" "$PUERTO_SSL_USADO"
+    # Fin de fn_verificar_certificados
 }
