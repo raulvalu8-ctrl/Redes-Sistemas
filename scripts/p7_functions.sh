@@ -365,10 +365,15 @@ TraceEnable Off
 APACHEEOF
 
     local SSL_LABEL="No"
+    local PUERTO_SSL="443"
     if [ "$SSL" = "si" ]; then
         fn_generar_certificado_ssl "apache"
         local CERT_DIR="${SSL_DIR}/apache"
-        SSL_LABEL="Si (puerto 443)"
+        
+        echo -ne "${YELLOW}Puerto SSL para Apache (ENTER=443): ${NC}"
+        read -r PUERTO_SSL
+        [ -z "$PUERTO_SSL" ] && PUERTO_SSL="443"
+        SSL_LABEL="Si (puerto $PUERTO_SSL)"
 
         sed -i 's/#LoadModule ssl_module/LoadModule ssl_module/' "$CONF"
         sed -i 's/#LoadModule headers_module/LoadModule headers_module/' "$CONF"
@@ -377,9 +382,9 @@ APACHEEOF
         cat >> "$CONF" <<SSLEOF
 
 # SSL - Practica 7
-Listen 443
+Listen $PUERTO_SSL
 
-<VirtualHost *:443>
+<VirtualHost *:$PUERTO_SSL>
     ServerName ${DOMINIO}
     DocumentRoot "/usr/local/apache2/htdocs"
     SSLEngine on
@@ -391,10 +396,11 @@ Listen 443
 
 <VirtualHost *:${PUERTO}>
     ServerName ${DOMINIO}
-    Redirect permanent / https://${DOMINIO}/
+    Redirect permanent / https://${DOMINIO}:$PUERTO_SSL/
 </VirtualHost>
 SSLEOF
-        fn_sec "SSL configurado en Apache (puerto 443 + redireccion desde ${PUERTO})"
+        fn_sec "SSL configurado en Apache (puerto $PUERTO_SSL + redireccion desde ${PUERTO})"
+        iptables -I INPUT -p tcp --dport "$PUERTO_SSL" -j ACCEPT 2>/dev/null
     fi
 
     mkdir -p /usr/local/apache2/htdocs
@@ -488,13 +494,19 @@ fn_instalar_nginx_ftp() {
 
     local SSL_BLOCK=""
     local SSL_LABEL="No"
+    local PUERTO_SSL="443"
     if [ "$SSL" = "si" ]; then
         fn_generar_certificado_ssl "nginx"
         local CERT_DIR="${SSL_DIR}/nginx"
-        SSL_LABEL="Si (puerto 443)"
+        
+        echo -ne "${YELLOW}Puerto SSL para Nginx (ENTER=443): ${NC}"
+        read -r PUERTO_SSL
+        [ -z "$PUERTO_SSL" ] && PUERTO_SSL="443"
+        SSL_LABEL="Si (puerto $PUERTO_SSL)"
+        
         SSL_BLOCK="
     server {
-        listen 443 ssl;
+        listen $PUERTO_SSL ssl;
         server_name ${DOMINIO};
         ssl_certificate     ${CERT_DIR}/server.crt;
         ssl_certificate_key ${CERT_DIR}/server.key;
@@ -507,6 +519,7 @@ fn_instalar_nginx_ftp() {
         index index.html;
         server_tokens off;
     }"
+        iptables -I INPUT -p tcp --dport "$PUERTO_SSL" -j ACCEPT 2>/dev/null
     fi
 
     cat > /usr/local/nginx/conf/nginx.conf <<NGINXEOF
@@ -632,15 +645,21 @@ fn_instalar_tomcat_ftp() {
     fn_ok "Puerto Tomcat configurado a ${PUERTO}"
 
     local SSL_LABEL="No"
+    local PUERTO_SSL="443"
     if [ "$SSL" = "si" ]; then
         fn_generar_certificado_ssl "tomcat"
         local CERT_DIR="${SSL_DIR}/tomcat"
-        SSL_LABEL="Si (puerto 443)"
+        
+        echo -ne "${YELLOW}Puerto SSL para Tomcat (ENTER=443): ${NC}"
+        read -r PUERTO_SSL
+        [ -z "$PUERTO_SSL" ] && PUERTO_SSL="443"
+        SSL_LABEL="Si (puerto $PUERTO_SSL)"
 
-        sed -i "s|</Service>|    <Connector port=\"443\" protocol=\"org.apache.coyote.http11.Http11NioProtocol\"\n               SSLEnabled=\"true\" scheme=\"https\" secure=\"true\"\n               keystoreFile=\"${CERT_DIR}/server.crt\"\n               keystorePass=\"practica7\"\n               clientAuth=\"false\" sslProtocol=\"TLS\" />\n</Service>|" \
+        sed -i "s|</Service>|    <Connector port=\"$PUERTO_SSL\" protocol=\"org.apache.coyote.http11.Http11NioProtocol\"\n               SSLEnabled=\"true\" scheme=\"https\" secure=\"true\"\n               keystoreFile=\"${CERT_DIR}/server.crt\"\n               keystorePass=\"practica7\"\n               clientAuth=\"false\" sslProtocol=\"TLS\" />\n</Service>|" \
             "${TOMCAT_BASE}/conf/server.xml"
 
-        fn_sec "SSL configurado en Tomcat puerto 443"
+        fn_sec "SSL configurado en Tomcat puerto $PUERTO_SSL"
+        iptables -I INPUT -p tcp --dport "$PUERTO_SSL" -j ACCEPT 2>/dev/null
     fi
 
     if ! id tomcat &>/dev/null; then
@@ -941,14 +960,19 @@ fn_instalar_web_con_ssl() {
             sed -i "s/^Listen.*$/Listen ${PUERTO}/" "$APACHE_CONF" 2>/dev/null
 
             local SSL_LABEL="No"
+            local PUERTO_SSL="443"
             if [ "$SSL" = "si" ]; then
                 fn_generar_certificado_ssl "apache"
                 local CERT_DIR="${SSL_DIR}/apache"
-                SSL_LABEL="Si (puerto 443)"
+                
+                echo -ne "${YELLOW}Puerto SSL para Apache (ENTER=443): ${NC}"
+                read -r PUERTO_SSL
+                [ -z "$PUERTO_SSL" ] && PUERTO_SSL="443"
+                SSL_LABEL="Si (puerto $PUERTO_SSL)"
 
                 cat > /etc/httpd/conf/conf.d/ssl_p7.conf <<APACHESSLCONF
-Listen 443
-<VirtualHost *:443>
+Listen $PUERTO_SSL
+<VirtualHost *:$PUERTO_SSL>
     ServerName ${DOMINIO}
     DocumentRoot ${WEBROOT}
     SSLEngine on
@@ -956,6 +980,7 @@ Listen 443
     SSLCertificateKeyFile ${CERT_DIR}/server.key
 </VirtualHost>
 APACHESSLCONF
+                iptables -I INPUT -p tcp --dport "$PUERTO_SSL" -j ACCEPT 2>/dev/null
             fi
 
             cat > "${WEBROOT}/index.html" <<HTMLEOF
@@ -1003,19 +1028,26 @@ HTMLEOF
 
             local SSL_LABEL="No"
             local SSL_BLOCK=""
+            local PUERTO_SSL="443"
             if [ "$SSL" = "si" ]; then
                 fn_generar_certificado_ssl "nginx"
                 local CERT_DIR="${SSL_DIR}/nginx"
-                SSL_LABEL="Si (puerto 443)"
+                
+                echo -ne "${YELLOW}Puerto SSL para Nginx (ENTER=443): ${NC}"
+                read -r PUERTO_SSL
+                [ -z "$PUERTO_SSL" ] && PUERTO_SSL="443"
+                SSL_LABEL="Si (puerto $PUERTO_SSL)"
+
                 SSL_BLOCK="
     server {
-        listen 443 ssl;
+        listen $PUERTO_SSL ssl;
         server_name ${DOMINIO};
         ssl_certificate     ${CERT_DIR}/server.crt;
         ssl_certificate_key ${CERT_DIR}/server.key;
         root ${NGINX_WEBROOT};
         index index.html;
     }"
+                iptables -I INPUT -p tcp --dport "$PUERTO_SSL" -j ACCEPT 2>/dev/null
             fi
 
             cat > /etc/nginx/nginx.conf <<NGINXCONF
@@ -1077,6 +1109,27 @@ HTMLEOF
             local TC_ROOT="/var/lib/tomcat/webapps/ROOT"
             mkdir -p "$TC_ROOT"
 
+            local SSL_LABEL="No"
+            local PUERTO_SSL="8443"
+            if [ "$SSL" = "si" ]; then
+                fn_generar_certificado_ssl "tomcat"
+                local CERT_DIR="${SSL_DIR}/tomcat"
+                
+                echo -ne "${YELLOW}Puerto SSL para Tomcat (ENTER=8443): ${NC}"
+                read -r PUERTO_SSL
+                [ -z "$PUERTO_SSL" ] && PUERTO_SSL="8443"
+                SSL_LABEL="Si (puerto $PUERTO_SSL)"
+                
+                # Configurar SSL en server.xml de Tomcat local
+                local TC_CONF="/etc/tomcat/server.xml"
+                [ ! -f "$TC_CONF" ] && TC_CONF="/etc/tomcat9/server.xml"
+                
+                if [ -f "$TC_CONF" ]; then
+                    sed -i "s|</Service>|    <Connector port=\"$PUERTO_SSL\" protocol=\"org.apache.coyote.http11.Http11NioProtocol\"\n               SSLEnabled=\"true\" scheme=\"https\" secure=\"true\"\n               keystoreFile=\"${CERT_DIR}/server.crt\"\n               keystorePass=\"practica7\"\n               clientAuth=\"false\" sslProtocol=\"TLS\" />\n</Service>|" "$TC_CONF"
+                fi
+                iptables -I INPUT -p tcp --dport "$PUERTO_SSL" -j ACCEPT 2>/dev/null
+            fi
+
             cat > "${TC_ROOT}/index.html" <<HTMLEOF
 <!DOCTYPE html>
 <html lang="es">
@@ -1100,7 +1153,7 @@ HTMLEOF
         <div>
             <span class="badge">Servidor: Tomcat</span>
             <span class="badge">Puerto HTTP: ${PUERTO}</span>
-            <span class="badge">SSL: No</span>
+            <span class="badge">SSL: ${SSL_LABEL}</span>
         </div>
         <div>OS: Windows Server</div>
         <div>Dominio: ${DOMINIO}</div>
@@ -1114,7 +1167,7 @@ HTMLEOF
             systemctl enable tomcat 2>/dev/null
             systemctl restart tomcat 2>/dev/null
             fn_ok "Tomcat instalado y premium."
-            RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Tomcat] Puerto: ${PUERTO} | SSL: No | Origen: WEB"
+            RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Tomcat] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
             ;;
     esac
 }
