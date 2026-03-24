@@ -798,9 +798,9 @@ check_shell=NO
 # Acceso anonimo activado - SOLO VISIVA (Lectura)
 anonymous_enable=YES
 no_anon_password=YES
-anon_root=/var/ftp
+anon_root=/var/ftp_p7
 allow_anon_ssl=YES
-local_root=/var/ftp
+local_root=/var/ftp_p7
 anon_upload_enable=NO
 anon_mkdir_write_enable=NO
 anon_other_write_enable=NO
@@ -822,16 +822,18 @@ seccomp_sandbox=NO
 debug_ssl=YES
 VSFTPDEOF
 
-    # Crear jerarquia solicitada: general, u1, http
-    local FTP_ROOT="/var/ftp"
+    # Crear jerarquia solicitada: u1, http
+    local FTP_ROOT="/var/ftp_p7"
     
-    # Limpieza AGRESIVA de carpetas no deseadas
-    fn_info "Eliminando FORZOSAMENTE carpetas extra (pkg, pub, grupos, general)..."
-    # Borrar posibles rutas duplicadas o antiguas
-    rm -rf /var/ftp/pub /var/ftp/pkg /var/ftp/grupos /var/ftp/general 2>/dev/null
-    rm -rf /http/Linux 2>/dev/null # Limpiar rastro de la ruta vieja en la raiz
+    # Limpieza TOTAL de la ruta nueva por si acaso
+    fn_info "Preparando servidor FTP en ruta fresca: ${FTP_ROOT}..."
+    rm -rf "$FTP_ROOT" 2>/dev/null
+    mkdir -p "$FTP_ROOT"
     
-    fn_info "Asegurando jerarquia limpia (${FTP_ROOT}/{u1, http/Linux})..."
+    # Asegurar que la ruta vieja (/var/ftp) no interfiera 
+    # (No la borramos por si el usuario tiene cosas ahi, pero el FTP ya no la usa)
+    
+    fn_info "Creando jerarquia limpia (${FTP_ROOT}/{u1, http/Linux})..."
     
     # Asegurar que el contenedor base existe
     mkdir -p "${FTP_ROOT}"
