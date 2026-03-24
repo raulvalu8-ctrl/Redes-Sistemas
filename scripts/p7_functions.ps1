@@ -798,10 +798,13 @@ function fn_configurar_ftps {
     fn_sec "Generando certificado SSL para FTPS..."
     $cert = New-SelfSignedCertificate -DnsName $script:DOMINIO -CertStoreLocation "cert:\LocalMachine\My" -NotAfter (Get-Date).AddYears(1)
     
-    fn_info "Inyectando politicas de seguridad TLS/SSL al servidor FTP..."
-    Set-WebConfigurationProperty -Filter /system.ftpServer/security/ssl -PSPath "IIS:\Sites\$siteName" -Name controlChannelPolicy -Value "SslAllow"
-    Set-WebConfigurationProperty -Filter /system.ftpServer/security/ssl -PSPath "IIS:\Sites\$siteName" -Name dataChannelPolicy -Value "SslAllow"
-    Set-WebConfigurationProperty -Filter /system.ftpServer/security/ssl -PSPath "IIS:\Sites\$siteName" -Name serverCertHash -Value $cert.GetCertHashString()
+    fn_info "Inyectando politicas de seguridad TLS/SSL via AppCmd (SslAllow)..."
+    $appCmd = "C:\Windows\System32\inetsrv\appcmd.exe"
+    $certHash = $cert.GetCertHashString()
+    
+    # Usar AppCmd para saltarse los fallos del proveedor de PowerShell
+    & $appCmd set config "$siteName" /section:system.ftpServer/security/ssl /controlChannelPolicy:SslAllow /dataChannelPolicy:SslAllow /serverCertHash:$certHash /commit:apphost | Out-Null
+
     
     fn_info "Limpiando y creando reglas de firewall para FTPS..."
     Remove-NetFirewallRule -DisplayName "FTPS P7*" -ErrorAction SilentlyContinue
@@ -809,21 +812,15 @@ function fn_configurar_ftps {
     New-NetFirewallRule -DisplayName "FTPS P7 Pasivo" -Direction Inbound -LocalPort 10000-10100 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
 
     
-    fn_info "Configurando acceso ANONIMO para el servidor FTP..."
-    Set-WebConfiguration "/system.ftpServer/security/authentication/anonymousAuthentication" -value @{enabled="true"} -PSPath "IIS:\Sites\$siteName"
+    fn_info "Configurando acceso ANONIMO para el servidor FTP via AppCmd..."
+    # Habilitar Autenticacion Anonima
+    & $appCmd set config "$siteName" /section:system.ftpServer/security/authentication/anonymousAuthentication /enabled:true /commit:apphost | Out-Null
     
-    # Autorizar lectura anonima (?)
-    # Primero limpiar cualquier regla anonima previa para evitar duplicados
     # Autorizar lectura/escritura anonima para ? (Usuarios anonimos en IIS)
-    $authPath = "/system.ftpServer/security/authorization"
-    fn_info "Aplicando autorizacion FTP (esperando liberacion de archivo)..."
-    Start-Sleep -Seconds 1
-    try {
-        Clear-WebConfiguration $authPath -PSPath "IIS:\Sites\$siteName" -ErrorAction SilentlyContinue | Out-Null
-        Add-WebConfiguration $authPath -value @{accessType="Allow"; users="?"; roles=""; permissions="Read, Write" } -PSPath "IIS:\Sites\$siteName" -ErrorAction SilentlyContinue | Out-Null
-    } catch {
-        # Ignorar si el archivo esta bloqueado momentaneamente, el sitio ya suele tener la regla base
-    }
+    fn_info "Aplicando autorizacion FTP via AppCmd..."
+    # Limpiar reglas previas (usando appcmd es mas seguro)
+    & $appCmd clear config "$siteName" /section:system.ftpServer/security/authorization /commit:apphost | Out-Null
+    & $appCmd set config "$siteName" /section:system.ftpServer/security/authorization /+"[accessType='Allow',users='?',permissions='Read,Write']" /commit:apphost | Out-Null
     
     # Asegurar permisos NTFS de la RAIZ (Solo lectura para estabilidad y seguridad)
     fn_info "Ajustando permisos NTFS de la RAIZ (Solo lectura)..."
