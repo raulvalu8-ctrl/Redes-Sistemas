@@ -1015,13 +1015,16 @@ fn_instalar_web_con_ssl() {
             # Ajustar puerto de escucha (reemplaza cualquier puerto Listen existente)
             sed -i "s/^Listen.*$/Listen ${PUERTO}/" "$APACHE_CONF" 2>/dev/null
 
-            # Asegurar que mod_ssl y mod_headers esten cargados
             grep -q 'LoadModule ssl_module' "$APACHE_CONF" || \
                 echo "LoadModule ssl_module modules/mod_ssl.so" >> "$APACHE_CONF"
             grep -q 'LoadModule headers_module' "$APACHE_CONF" || \
                 echo "LoadModule headers_module modules/mod_headers.so" >> "$APACHE_CONF"
             grep -q 'LoadModule socache_shmcb_module' "$APACHE_CONF" || \
                 echo "LoadModule socache_shmcb_module modules/mod_socache_shmcb.so" >> "$APACHE_CONF"
+            
+            # Fix de cache SSL para Mageia
+            sed -i 's/^SSLSessionCache.*/SSLSessionCache "shmcb:\/run\/httpd\/ssl_cache(512000)"/' "$APACHE_CONF" 2>/dev/null
+
 
             local SSL_LABEL="No"
             local PUERTO_SSL_APACHE="443"
@@ -1106,9 +1109,15 @@ APACHESSLCONF
 HTMLEOF
 
             systemctl enable httpd 2>/dev/null
-            systemctl restart httpd 2>/dev/null
-            fn_ok "Apache instalado via urpmi (servicio: httpd) - puerto ${PUERTO}"
-            RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Apache] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
+            fn_info "Reiniciando Apache (httpd)..."
+            if systemctl restart httpd; then
+                fn_ok "Apache instalado via urpmi (servicio: httpd) - puerto ${PUERTO}"
+                RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Apache] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
+            else
+                fn_err "Fallo el arranque de Apache. Revisando logs..."
+                journalctl -u httpd --no-pager -n 20
+            fi
+
             ;;
         nginx)
             urpmi --auto --quiet nginx 2>/dev/null
@@ -1223,9 +1232,15 @@ NGINXCONF
 HTMLEOF
 
             systemctl enable nginx 2>/dev/null
-            systemctl restart nginx 2>/dev/null
-            fn_ok "Nginx instalado via urpmi - puerto ${PUERTO} | SSL: ${SSL_LABEL}"
-            RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Nginx] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
+            fn_info "Reiniciando Nginx..."
+            if systemctl restart nginx; then
+                fn_ok "Nginx instalado via urpmi - puerto ${PUERTO} | SSL: ${SSL_LABEL}"
+                RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Nginx] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
+            else
+                fn_err "Fallo el arranque de Nginx. Revisando logs..."
+                journalctl -u nginx --no-pager -n 20
+            fi
+
             ;;
 
         tomcat)
@@ -1430,9 +1445,15 @@ HTMLEOF
             [ "$SSL" = "si" ] && iptables -I INPUT -p tcp --dport "$PUERTO_SSL_TC" -j ACCEPT 2>/dev/null
 
             systemctl enable "$TOMCAT_SVC" 2>/dev/null
-            systemctl restart "$TOMCAT_SVC" 2>/dev/null
-            fn_ok "Tomcat instalado via urpmi - puerto ${PUERTO} | SSL: ${SSL_LABEL}"
-            RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Tomcat] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
+            fn_info "Reiniciando Tomcat ($TOMCAT_SVC)..."
+            if systemctl restart "$TOMCAT_SVC"; then
+                fn_ok "Tomcat instalado via urpmi - puerto ${PUERTO} | SSL: ${SSL_LABEL}"
+                RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Tomcat] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
+            else
+                fn_err "Fallo el arranque de Tomcat. Revisando logs..."
+                journalctl -u "$TOMCAT_SVC" --no-pager -n 20
+            fi
+
             ;;
     esac
 }
