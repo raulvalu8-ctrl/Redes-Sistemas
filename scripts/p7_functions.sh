@@ -691,9 +691,9 @@ fn_instalar_tomcat_ftp() {
 </head>
 <body>
     <div class="card">
-        <h1>Tomcat - Windows Server</h1>
+        <h1>IIS - Windows Server</h1>
         <div>
-            <span class="badge">Servidor: Tomcat</span>
+            <span class="badge">Servidor: IIS (Tomcat)</span>
             <span class="badge">Version: ${VERSION}</span>
             <span class="badge">Puerto: ${PUERTO}</span>
             <span class="badge">SSL: ${SSL_LABEL}</span>
@@ -743,25 +743,29 @@ fn_instalar_servicio_hibrido() {
     PUERTO_SSL_USADO="443"
 
     if [ "$MODO" = "1" ]; then
-        # Preguntar por SSL para que "jale" en https
-        echo -ne "${YELLOW}¿Deseas activar SSL/HTTPS? (s/n): ${NC}"
+        # Preguntar por los dos puertos (HTTP y HTTPS)
+        echo -ne "${YELLOW}Ingresa el puerto HTTP deseado (ENTER para default): ${NC}"
+        read -r PUERTO
+        if [ -z "$PUERTO" ]; then
+            [ "$TIPO" = "apache" ] && PUERTO="80"
+            [ "$TIPO" = "nginx" ] && PUERTO="81"
+            [ "$TIPO" = "tomcat" ] && PUERTO="8080"
+        fi
+        
+        # Advertencia de puertos no seguros (Chrome/Edge bloquean ciertos puertos como 6000)
+        if [[ "$PUERTO" =~ ^(6000|6665|6666|6667|6668|6669|6697|1719|1720|1723|2049|3659|4045)$ ]]; then
+            fn_err "CUIDADO: El puerto $PUERTO suele ser bloqueado por navegadores (ERR_UNSAFE_PORT)."
+            fn_info "Te recomiendo usar: 80, 81, 8080, 8443, 9000, 9090."
+        fi
+
+        echo -ne "${YELLOW}¿Deseas activar SSL/HTTPS en este servicio? (s/n): ${NC}"
         read -r ACTIVAR_SSL
         
         if [[ "$ACTIVAR_SSL" =~ ^[sS]$ ]]; then
-            local PUERTO_SUG="80"
-            [ "$TIPO" = "nginx" ] && PUERTO_SUG="81"
-            [ "$TIPO" = "tomcat" ] && PUERTO_SUG="8080"
-            
-            fn_instalar_web_con_ssl "$TIPO" "$PUERTO_SUG" "si"
-            # La verificacion ya se hace dentro de fn_instalar_web_con_ssl o despues?
-            # La haremos aqui al final de la funcion hibrida para uniformidad
-            PUERTO="$PUERTO_SUG" # Fallback si falla el parseo
+            fn_instalar_web_con_ssl "$TIPO" "$PUERTO" "si"
             SSL="si"
+            # PUERTO_SSL_USADO se actualiza dentro de fn_instalar_web_con_ssl
         else
-            echo -ne "${YELLOW}Ingresa el puerto deseado (ENTER para default): ${NC}"
-            read -r PUERTO
-            [ -z "$PUERTO" ] && PUERTO="80"
-            
             fn_info "Iniciando aprovisionamiento WEB para $NOMBRE en puerto $PUERTO..."
             case "$TIPO" in
                 "apache")
@@ -1149,9 +1153,9 @@ HTMLEOF
 </head>
 <body>
     <div class="card">
-        <h1>Tomcat - Windows Server</h1>
+        <h1>IIS - Windows Server</h1>
         <div>
-            <span class="badge">Servidor: Tomcat</span>
+            <span class="badge">Servidor: IIS (Tomcat)</span>
             <span class="badge">Puerto HTTP: ${PUERTO}</span>
             <span class="badge">SSL: ${SSL_LABEL}</span>
         </div>
