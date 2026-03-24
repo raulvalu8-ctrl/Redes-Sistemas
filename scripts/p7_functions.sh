@@ -720,22 +720,46 @@ fn_instalar_servicio_hibrido() {
     read -r MODO
     
     if [ "$MODO" = "1" ]; then
-        fn_info "Iniciando aprovisionamiento WEB para $NOMBRE..."
+        echo -ne "${YELLOW}Ingresa el puerto deseado (ENTER para default): ${NC}"
+        read -r PUERTO
+        
+        # Valores por defecto
+        if [ -z "$PUERTO" ]; then
+            case "$TIPO" in
+                "apache") PUERTO="80" ;;
+                "nginx")  PUERTO="81" ;;
+                "tomcat") PUERTO="8080" ;;
+            esac
+        fi
+        
+        # Verificar si el puerto esta ocupado
+        if ss -tlnp | grep -q ":${PUERTO} " && [ "$MODO" = "1" ]; then
+            fn_err "El puerto $PUERTO ya esta en uso. Elige otro."
+            return 1
+        fi
+
+        fn_info "Iniciando aprovisionamiento WEB para $NOMBRE en puerto $PUERTO..."
         case "$TIPO" in
             "apache")
                 urpmi --auto httpd 2>/dev/null
+                # Cambiar Listen
+                sed -i "s/^Listen .*/Listen $PUERTO/" /etc/httpd/conf/httpd.conf 2>/dev/null
                 systemctl enable --now httpd 2>/dev/null
-                fn_ok "Apache httpd instalado y activo."
+                fn_ok "Apache httpd instalado y activo en puerto $PUERTO."
                 ;;
             "nginx")
                 urpmi --auto nginx 2>/dev/null
+                # Cambiar listen en default server
+                sed -i "s/listen .*[0-9];/listen $PUERTO;/" /etc/nginx/nginx.conf 2>/dev/null
                 systemctl enable --now nginx 2>/dev/null
-                fn_ok "Nginx instalado y activo."
+                fn_ok "Nginx instalado y activo en puerto $PUERTO."
                 ;;
             "tomcat")
                 urpmi --auto tomcat 2>/dev/null
+                # Cambiar Connector port
+                sed -i "s/Connector port=\"[0-9]*\"/Connector port=\"$PUERTO\"/" /etc/tomcat/server.xml 2>/dev/null
                 systemctl enable --now tomcat 2>/dev/null
-                fn_ok "Tomcat instalado y activo."
+                fn_ok "Tomcat instalado y activo en puerto $PUERTO."
                 ;;
         esac
     elif [ "$MODO" = "2" ]; then
