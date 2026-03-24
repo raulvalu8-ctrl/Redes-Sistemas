@@ -706,6 +706,64 @@ HTMLEOF
 }
 
 # -----------------------------------------------------------------------------
+# BLOQUE 2: INSTALACION HIBRIDA (WEB / FTP)
+# -----------------------------------------------------------------------------
+
+fn_instalar_servicio_hibrido() {
+    local TIPO="$1"    # apache, nginx, tomcat
+    local NOMBRE="$2"  # Apache, Nginx, Tomcat
+    
+    echo -e "\n${CYAN}>>> CONFIGURACION DE $NOMBRE <<<${NC}"
+    echo -e "  [1] Aprovisionamiento WEB (Instalacion Local)"
+    echo -e "  [2] Descarga via FTP (Instaladores para Windows/Zip)"
+    echo -ne "\n${YELLOW}Selecciona modo: ${NC}"
+    read -r MODO
+    
+    if [ "$MODO" = "1" ]; then
+        fn_info "Iniciando aprovisionamiento WEB para $NOMBRE..."
+        case "$TIPO" in
+            "apache")
+                urpmi --auto httpd 2>/dev/null
+                systemctl enable --now httpd 2>/dev/null
+                fn_ok "Apache httpd instalado y activo."
+                ;;
+            "nginx")
+                urpmi --auto nginx 2>/dev/null
+                systemctl enable --now nginx 2>/dev/null
+                fn_ok "Nginx instalado y activo."
+                ;;
+            "tomcat")
+                urpmi --auto tomcat 2>/dev/null
+                systemctl enable --now tomcat 2>/dev/null
+                fn_ok "Tomcat instalado y activo."
+                ;;
+        esac
+    elif [ "$MODO" = "2" ]; then
+        fn_info "Iniciando descarga via FTP de $NOMBRE..."
+        local REMOTO="${FTP_BASE_PATH}/${TIPO}/"
+        fn_info "Explorando servidor FTP: $REMOTO"
+        
+        # Listar archivos disponibles
+        FILES=$(fn_ftp_listar "$REMOTO")
+        if [ -z "$FILES" ]; then
+            fn_err "No se encontraron archivos en el servidor FTP para $NOMBRE."
+            return 1
+        fi
+        
+        echo -e "\n${CYAN}Archivos disponibles:${NC}"
+        echo "$FILES"
+        echo -ne "\n${YELLOW}Escribe el nombre exacto del archivo a descargar: ${NC}"
+        read -r FILE_NAME
+        
+        mkdir -p "$INSTALL_DIR"
+        fn_ftp_descargar "${REMOTO}${FILE_NAME}" "${INSTALL_DIR}/${FILE_NAME}"
+    else
+        fn_err "Modo invalido."
+    fi
+}
+
+
+# -----------------------------------------------------------------------------
 # BLOQUE 7: SSL PARA VSFTPD (FTPS)
 # -----------------------------------------------------------------------------
 
