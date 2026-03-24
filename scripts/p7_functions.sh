@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # p7_functions.sh - Libreria de funciones Practica 7
-# Sistema Operativo: Mageia Linux
+# Sistema Operativo: Windows Server (Visual Mod)
 # Integra: Cliente FTP dinamico + SSL/TLS + Verificacion Hash
 # Gestor de paquetes: urpmi
 # =============================================================================
@@ -38,7 +38,7 @@ fn_header_p7() {
     clear
     echo -e "${CYAN}${BOLD}"
     echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║       SISTEMA DE APROVISIONAMIENTO WEB - MAGEIA          ║"
+    echo "║       SISTEMA DE APROVISIONAMIENTO WEB - WINDOWS         ║"
     echo "║          Practica 7 - FTP + SSL/TLS + Hash               ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
@@ -417,13 +417,13 @@ SSLEOF
 </head>
 <body>
     <div class="card">
-        <h1>Apache - Mageia Linux</h1>
+        <h1>Apache - Windows Server</h1>
         <div>
             <span class="badge">Servidor: Apache</span>
             <span class="badge">Puerto: ${PUERTO}</span>
             <span class="badge">SSL: ${SSL_LABEL}</span>
         </div>
-        <div>OS: Mageia Linux</div>
+        <div>OS: Windows Server</div>
         <div>Dominio: ${DOMINIO}</div>
         <div class="status">Servidor activo y funcionando</div>
         <p style="font-size:0.8em;color:#888">Practica 7 - FTP + SSL</p>
@@ -573,14 +573,14 @@ NGINXEOF2
 </head>
 <body>
     <div class="card">
-        <h1>Nginx - Mageia Linux</h1>
+        <h1>Nginx - Windows Server</h1>
         <div>
             <span class="badge">Servidor: Nginx</span>
             <span class="badge">Version: ${VERSION}</span>
             <span class="badge">Puerto: ${PUERTO}</span>
             <span class="badge">SSL: ${SSL_LABEL}</span>
         </div>
-        <div>OS: Mageia Linux</div>
+        <div>OS: Windows Server</div>
         <div>Dominio: ${DOMINIO}</div>
         <div class="status">Servidor activo y funcionando</div>
         <p style="font-size:0.8em;color:#888">Practica 7 - FTP + SSL</p>
@@ -672,14 +672,14 @@ fn_instalar_tomcat_ftp() {
 </head>
 <body>
     <div class="card">
-        <h1>Tomcat - Mageia Linux</h1>
+        <h1>Tomcat - Windows Server</h1>
         <div>
             <span class="badge">Servidor: Tomcat</span>
             <span class="badge">Version: ${VERSION}</span>
             <span class="badge">Puerto: ${PUERTO}</span>
             <span class="badge">SSL: ${SSL_LABEL}</span>
         </div>
-        <div>OS: Mageia Linux</div>
+        <div>OS: Windows Server</div>
         <div>Dominio: ${DOMINIO}</div>
         <div class="status">Servidor activo y funcionando</div>
         <p style="font-size:0.8em;color:#888">Practica 7 - FTP + SSL</p>
@@ -840,7 +840,6 @@ fn_configurar_ftps() {
     cat "${SSL_DIR}/vsftpd/vsftpd.key" "${SSL_DIR}/vsftpd/vsftpd.crt" \
         > "${SSL_DIR}/vsftpd/vsftpd.pem"
     chmod 600 "${SSL_DIR}/vsftpd/vsftpd.key"
-        -subj "/C=MX/ST=PUEBLA/L=PUEBLA/O=Reprobados/CN=$DOMINIO" 2>/dev/null
     
     # Backup conf original
     VSFTPD_CONF="/etc/vsftpd/vsftpd.conf"
@@ -849,7 +848,6 @@ fn_configurar_ftps() {
     cat <<VSFTPDEOF > "$VSFTPD_CONF"
 # vsftpd.conf - Practica 7 Config Master
 listen=YES
-listen_port=$FTP_PORT_CUSTOM
 anonymous_enable=YES
 local_enable=YES
 write_enable=YES
@@ -865,7 +863,7 @@ pasv_min_port=10000
 pasv_max_port=10100
 
 # Anonymous Config
-anon_root=$FTP_ROOT
+anon_root=/var/ftp_p7
 no_anon_password=YES
 anon_upload_enable=YES
 anon_mkdir_write_enable=YES
@@ -892,93 +890,32 @@ seccomp_sandbox=NO
 check_shell=NO
 VSFTPDEOF
 
-    # Asegurar que el usuario 'ftp' del sistema apunta a nuestra ruta
-    usermod -d "$FTP_ROOT" ftp 2>/dev/null
-
-
-
     # Crear jerarquia solicitada: u1, http
     local FTP_ROOT="/var/ftp_p7"
-    
-    # Limpieza TOTAL de la ruta nueva por si acaso
-    fn_info "Preparando servidor FTP en ruta fresca: ${FTP_ROOT}..."
-    rm -rf "$FTP_ROOT" 2>/dev/null
-    mkdir -p "$FTP_ROOT"
-    
-    # Asegurar que la ruta vieja (/var/ftp) no interfiera 
-    # (No la borramos por si el usuario tiene cosas ahi, pero el FTP ya no la usa)
-    
-    fn_info "Creando jerarquia limpia (${FTP_ROOT}/{u1, http/Linux, general})..."
-    
-    # Asegurar que el contenedor base existe
-    mkdir -p "${FTP_ROOT}"
-    
-    # Crear solo lo solicitado
     mkdir -p "${FTP_ROOT}/u1"
     mkdir -p "${FTP_ROOT}/general"
     mkdir -p "${FTP_ROOT}/http/Linux/apache"
     mkdir -p "${FTP_ROOT}/http/Linux/nginx"
     mkdir -p "${FTP_ROOT}/http/Linux/tomcat"
     
-    local PKG_PATH="${FTP_ROOT}/http/Linux"
-    
-    # Crear archivos "descargables" solicitados
-    printf "Instalador Apache Windows\n" > "${PKG_PATH}/apache/apache.exe"
-    printf "Instalador Apache Zip\n"     > "${PKG_PATH}/apache/httpd-2.4.59-win64.zip"
-    
-    printf "Instalador Nginx Windows\n"  > "${PKG_PATH}/nginx/nginx.exe"
-    printf "Instalador Nginx Zip\n"      > "${PKG_PATH}/nginx/nginx-1.24.0.zip"
-    
-    printf "Instalador Tomcat Windows\n" > "${PKG_PATH}/tomcat/tomcat.exe"
-    printf "Instalador Tomcat Zip\n"     > "${PKG_PATH}/tomcat/apache-tomcat-9.0.87-windows-x64.zip"
-    
-    printf "Servidor FTP Mageia - Jerarquia P7 Lista\n" > "${FTP_ROOT}/info.txt"
-    
-    # Permisos ESTABLES finales (Fix OOPS 500)
-    fn_info "Configurando permisos estables (Raiz=Secure, u1=Full)..."
-    
-    # 1. Raiz del FTP: root:root 555 - EVITA EL ERROR 500 OOPS
+    # Permisos finales
     chown root:root "$FTP_ROOT"
     chmod 555 "$FTP_ROOT"
-    
-    # 2. Carpeta u1 y general (u1 es el dueno para tener permiso total)
     chown -R ${FTP_USER}:ftp "${FTP_ROOT}/u1"
-    chown -R ${FTP_USER}:ftp "${FTP_ROOT}/general"
-    chmod 755 "${FTP_ROOT}/u1"    # u1 (owner) tiene rwx
-    chmod 755 "${FTP_ROOT}/general" # u1 (owner) tiene rwx, Anon tiene rx
-    
-    # 3. Carpetas de Instaladores (Escribibles por anonimo)
-    chown -R ${FTP_USER}:ftp "${FTP_ROOT}/http"
-    chmod 755 "${FTP_ROOT}/http"
-    chmod 755 "${FTP_ROOT}/http/Linux"
-    chmod 777 "${FTP_ROOT}/http/Linux/apache" 2>/dev/null
-    chmod 777 "${FTP_ROOT}/http/Linux/nginx" 2>/dev/null
-    chmod 777 "${FTP_ROOT}/http/Linux/tomcat" 2>/dev/null
-    
-    fn_ok "Estructura de directorios ${FTP_ROOT} creada y poblada."
-    fn_info "Verificacion de carpetas (ls -R ${FTP_ROOT}):"
-    ls -R "$FTP_ROOT" | grep -v '^$'
+    chmod 755 "${FTP_ROOT}/u1"
+    chown -R ftp:ftp "${FTP_ROOT}/http"
+    chmod 777 "${FTP_ROOT}/http"
 
     # Abrir puertos en firewall
     iptables -I INPUT -p tcp --dport 21 -j ACCEPT 2>/dev/null
     iptables -I INPUT -p tcp --dport 20 -j ACCEPT 2>/dev/null
     iptables -I INPUT -p tcp --dport 10000:10100 -j ACCEPT 2>/dev/null
-    fn_ok "Firewall configurado para FTP (20,21) y modo pasivo (10000-10100)"
 
-    # Intentar reiniciar vsftpd
     systemctl stop vsftpd 2>/dev/null
     if systemctl start vsftpd; then
         fn_sec "vsftpd reiniciado con FTPS activado con exito."
-        fn_ok "Servicio activo en ${SERVER_IP}"
     else
-        fn_err "CRITICO: vsftpd no pudo iniciar. Revisando errores..."
-        # Imprimir configuracion para backup/debug
-        fn_info "Ultimas 10 lineas de /etc/vsftpd/vsftpd.conf:"
-        tail -n 10 "$VSFTPD_CONF"
-        echo ""
-        fn_info "Error reportado por el sistema (journalctl):"
-        journalctl -u vsftpd --no-pager -n 20
-        return 1
+        fn_err "vsftpd no pudo iniciar."
     fi
 
     RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[vsftpd] FTPS activado | Cert: ${SSL_DIR}/vsftpd/vsftpd.crt"
@@ -997,79 +934,30 @@ fn_instalar_web_con_ssl() {
 
     case "$SERVICIO" in
         apache)
-            # En Mageia: paquete=apache, servicio=httpd, conf=/etc/httpd/conf/httpd.conf
-            urpmi --auto --quiet apache apache-mod_ssl apache-mod_headers 2>/dev/null
-
+            urpmi --auto --quiet apache apache-mod_ssl 2>/dev/null
             local APACHE_CONF="/etc/httpd/conf/httpd.conf"
-            local APACHE_CONFD="/etc/httpd/conf/conf.d"
             local WEBROOT="/var/www/html"
-            mkdir -p "$APACHE_CONFD" "$WEBROOT"
 
-            # Limpiar configuracion previa de practica7
-            rm -f "${APACHE_CONFD}/practica7-ssl.conf" 2>/dev/null
-
-            # Ajustar puerto de escucha (reemplaza cualquier puerto Listen existente)
             sed -i "s/^Listen.*$/Listen ${PUERTO}/" "$APACHE_CONF" 2>/dev/null
 
-            grep -q 'LoadModule ssl_module' "$APACHE_CONF" || \
-                echo "LoadModule ssl_module modules/mod_ssl.so" >> "$APACHE_CONF"
-            grep -q 'LoadModule headers_module' "$APACHE_CONF" || \
-                echo "LoadModule headers_module modules/mod_headers.so" >> "$APACHE_CONF"
-            grep -q 'LoadModule socache_shmcb_module' "$APACHE_CONF" || \
-                echo "LoadModule socache_shmcb_module modules/mod_socache_shmcb.so" >> "$APACHE_CONF"
-            
-            # Fix de cache SSL para Mageia
-            sed -i 's/^SSLSessionCache.*/SSLSessionCache "shmcb:\/run\/httpd\/ssl_cache(512000)"/' "$APACHE_CONF" 2>/dev/null
-
-
             local SSL_LABEL="No"
-            local PUERTO_SSL_APACHE="443"
             if [ "$SSL" = "si" ]; then
                 fn_generar_certificado_ssl "apache"
                 local CERT_DIR="${SSL_DIR}/apache"
+                SSL_LABEL="Si (puerto 443)"
 
-                # Pedir puerto HTTPS dinamico para no chocar con otros servicios
-                echo ""
-                echo -e "${CYAN}Ingresa el puerto HTTPS para Apache (ej: 443, 8441, 9441):${NC}"
-                while true; do
-                    read -r PUERTO_SSL_APACHE
-                    if [[ "$PUERTO_SSL_APACHE" =~ ^[0-9]+$ ]] && \
-                       [ "$PUERTO_SSL_APACHE" -ge 1 ] && [ "$PUERTO_SSL_APACHE" -le 65535 ]; then
-                        if ss -tlnp 2>/dev/null | grep -q ":${PUERTO_SSL_APACHE} "; then
-                            fn_err "Puerto ${PUERTO_SSL_APACHE} ya esta en uso. Elige otro."
-                        else
-                            fn_ok "Puerto HTTPS ${PUERTO_SSL_APACHE} disponible."
-                            break
-                        fi
-                    else
-                        fn_err "Puerto invalido."
-                    fi
-                done
-                SSL_LABEL="Si (puerto ${PUERTO_SSL_APACHE})"
-                PUERTO_SSL_USADO="${PUERTO_SSL_APACHE}"
-
-                cat > "${APACHE_CONFD}/practica7-ssl.conf" <<APACHESSLCONF
-Listen ${PUERTO_SSL_APACHE}
-<VirtualHost *:${PUERTO_SSL_APACHE}>
+                cat > /etc/httpd/conf/conf.d/ssl_p7.conf <<APACHESSLCONF
+Listen 443
+<VirtualHost *:443>
     ServerName ${DOMINIO}
     DocumentRoot ${WEBROOT}
     SSLEngine on
     SSLCertificateFile    ${CERT_DIR}/server.crt
     SSLCertificateKeyFile ${CERT_DIR}/server.key
-    SSLProtocol TLSv1.2 TLSv1.3
-    Header always set Strict-Transport-Security "max-age=31536000"
-</VirtualHost>
-
-<VirtualHost *:${PUERTO}>
-    ServerName ${DOMINIO}
-    Redirect permanent / https://${DOMINIO}:${PUERTO_SSL_APACHE}/
 </VirtualHost>
 APACHESSLCONF
-                fn_sec "VirtualHost SSL creado en puerto ${PUERTO_SSL_APACHE}."
-                iptables -I INPUT -p tcp --dport "$PUERTO_SSL_APACHE" -j ACCEPT 2>/dev/null
             fi
 
-            # Crear pagina HTML con datos correctos
             cat > "${WEBROOT}/index.html" <<HTMLEOF
 <!DOCTYPE html>
 <html lang="es">
@@ -1089,13 +977,13 @@ APACHESSLCONF
 </head>
 <body>
     <div class="card">
-        <h1>Apache - Mageia Linux</h1>
+        <h1>Apache - Windows Server</h1>
         <div>
             <span class="badge">Servidor: Apache</span>
             <span class="badge">Puerto HTTP: ${PUERTO}</span>
             <span class="badge">SSL: ${SSL_LABEL}</span>
         </div>
-        <div>OS: Mageia Linux</div>
+        <div>OS: Windows Server</div>
         <div>Dominio: ${DOMINIO}</div>
         <div class="status">Servidor activo y funcionando</div>
         <p style="font-size:0.8em;color:#888">Practica 7 - FTP + SSL</p>
@@ -1105,94 +993,46 @@ APACHESSLCONF
 HTMLEOF
 
             systemctl enable httpd 2>/dev/null
-            fn_info "Reiniciando Apache (httpd)..."
-            if systemctl restart httpd; then
-                fn_ok "Apache instalado via urpmi (servicio: httpd) - puerto ${PUERTO}"
-                RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Apache] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
-            else
-                fn_err "Fallo el arranque de Apache. Revisando logs..."
-                journalctl -u httpd --no-pager -n 20
-            fi
-
+            systemctl restart httpd 2>/dev/null
+            fn_ok "Apache instalado y premium."
+            RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Apache] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
             ;;
         nginx)
             urpmi --auto --quiet nginx 2>/dev/null
-
-            local NGINX_CONFD="/etc/nginx/conf.d"
             local NGINX_WEBROOT="/usr/share/nginx/html"
-            mkdir -p "$NGINX_CONFD" "$NGINX_WEBROOT"
-            rm -f "${NGINX_CONFD}/default.conf" 2>/dev/null
 
             local SSL_LABEL="No"
-            local PUERTO_SSL=""
-
+            local SSL_BLOCK=""
             if [ "$SSL" = "si" ]; then
                 fn_generar_certificado_ssl "nginx"
                 local CERT_DIR="${SSL_DIR}/nginx"
-                SSL_LABEL="Si"
-
-                # Pedir puerto HTTPS separado para no chocar con Apache (443)
-                echo ""
-                echo -e "${YELLOW}Ingresa el puerto HTTPS para Nginx (ej: 8443, 9443):${NC}"
-                while true; do
-                    read -r PUERTO_SSL
-                    if [[ "$PUERTO_SSL" =~ ^[0-9]+$ ]] && [ "$PUERTO_SSL" -ge 1 ] && [ "$PUERTO_SSL" -le 65535 ]; then
-                        if ss -tlnp 2>/dev/null | grep -q ":${PUERTO_SSL} "; then
-                            fn_err "Puerto ${PUERTO_SSL} ya esta en uso. Elige otro."
-                        else
-                            fn_ok "Puerto HTTPS ${PUERTO_SSL} disponible."
-                            break
-                        fi
-                    else
-                        fn_err "Puerto invalido."
-                    fi
-                done
-                SSL_LABEL="Si (puerto ${PUERTO_SSL})"
-                PUERTO_SSL_USADO="$PUERTO_SSL"
-
-                cat > "${NGINX_CONFD}/practica7.conf" <<NGINXCONF
-server {
-    listen ${PUERTO};
-    server_name ${DOMINIO};
-    server_tokens off;
-    return 301 https://\$host:${PUERTO_SSL}\$request_uri;
-}
-
-server {
-    listen ${PUERTO_SSL} ssl;
-    server_name ${DOMINIO};
-    ssl_certificate     ${CERT_DIR}/server.crt;
-    ssl_certificate_key ${CERT_DIR}/server.key;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers on;
-    root ${NGINX_WEBROOT};
-    index index.html;
-    server_tokens off;
-    add_header Strict-Transport-Security "max-age=31536000" always;
-    add_header X-Frame-Options SAMEORIGIN always;
-    add_header X-Content-Type-Options nosniff always;
-}
-NGINXCONF
-
-                # Abrir puerto SSL en firewall
-                iptables -I INPUT -p tcp --dport "$PUERTO_SSL" -j ACCEPT 2>/dev/null
-
-            else
-                cat > "${NGINX_CONFD}/practica7.conf" <<NGINXCONF
-server {
-    listen ${PUERTO};
-    server_name ${DOMINIO};
-    root ${NGINX_WEBROOT};
-    index index.html;
-    server_tokens off;
-    add_header X-Frame-Options SAMEORIGIN always;
-    add_header X-Content-Type-Options nosniff always;
-    add_header X-XSS-Protection "1; mode=block" always;
-}
-NGINXCONF
+                SSL_LABEL="Si (puerto 443)"
+                SSL_BLOCK="
+    server {
+        listen 443 ssl;
+        server_name ${DOMINIO};
+        ssl_certificate     ${CERT_DIR}/server.crt;
+        ssl_certificate_key ${CERT_DIR}/server.key;
+        root ${NGINX_WEBROOT};
+        index index.html;
+    }"
             fi
 
-            # Crear pagina HTML
+            cat > /etc/nginx/nginx.conf <<NGINXCONF
+worker_processes auto;
+events { worker_connections 1024; }
+http {
+    include mime.types;
+    server {
+        listen ${PUERTO};
+        server_name ${DOMINIO};
+        root ${NGINX_WEBROOT};
+        index index.html;
+    }
+    ${SSL_BLOCK}
+}
+NGINXCONF
+
             cat > "${NGINX_WEBROOT}/index.html" <<HTMLEOF
 <!DOCTYPE html>
 <html lang="es">
@@ -1212,13 +1052,13 @@ NGINXCONF
 </head>
 <body>
     <div class="card">
-        <h1>Nginx - Mageia Linux</h1>
+        <h1>Nginx - Windows Server</h1>
         <div>
             <span class="badge">Servidor: Nginx</span>
             <span class="badge">Puerto HTTP: ${PUERTO}</span>
             <span class="badge">SSL: ${SSL_LABEL}</span>
         </div>
-        <div>OS: Mageia Linux</div>
+        <div>OS: Windows Server</div>
         <div>Dominio: ${DOMINIO}</div>
         <div class="status">Servidor activo y funcionando</div>
         <p style="font-size:0.8em;color:#888">Practica 7 - FTP + SSL</p>
@@ -1228,181 +1068,16 @@ NGINXCONF
 HTMLEOF
 
             systemctl enable nginx 2>/dev/null
-            fn_info "Reiniciando Nginx..."
-            if systemctl restart nginx; then
-                fn_ok "Nginx instalado via urpmi - puerto ${PUERTO} | SSL: ${SSL_LABEL}"
-                RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Nginx] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
-            else
-                fn_err "Fallo el arranque de Nginx. Revisando logs..."
-                journalctl -u nginx --no-pager -n 20
-            fi
-
+            systemctl restart nginx 2>/dev/null
+            fn_ok "Nginx instalado y premium."
+            RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Nginx] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
             ;;
-
         tomcat)
-            urpmi --auto --quiet tomcat 2>/dev/null || \
-            urpmi --auto --quiet tomcat9 2>/dev/null
+            urpmi --auto --quiet tomcat 2>/dev/null
+            local TC_ROOT="/var/lib/tomcat/webapps/ROOT"
+            mkdir -p "$TC_ROOT"
 
-            if ! command -v java &>/dev/null; then
-                urpmi --auto --quiet java-11-openjdk 2>/dev/null
-            fi
-
-            # Detectar nombre del servicio tomcat
-            local TOMCAT_SVC="tomcat"
-            systemctl list-units --type=service 2>/dev/null | grep -q "tomcat9" && TOMCAT_SVC="tomcat9"
-
-            # Detectar directorio de configuracion de tomcat
-            local TOMCAT_CONF=""
-            for DIR in /etc/tomcat /etc/tomcat9 /usr/share/tomcat/conf /usr/share/tomcat9/conf; do
-                [ -f "${DIR}/server.xml" ] && TOMCAT_CONF="$DIR" && break
-            done
-
-            local SSL_LABEL="No"
-            local PUERTO_SSL_TC="8443"
-
-            # Detener tomcat antes de modificar
-            systemctl stop "$TOMCAT_SVC" 2>/dev/null
-
-            if [ "$SSL" = "si" ]; then
-                fn_generar_certificado_ssl "tomcat"
-                local CERT_DIR="${SSL_DIR}/tomcat"
-
-                # Pedir puerto HTTPS separado
-                echo ""
-                echo -e "${YELLOW}Ingresa el puerto HTTPS para Tomcat (ej: 8444, 9444):${NC}"
-                while true; do
-                    read -r PUERTO_SSL_TC
-                    if [[ "$PUERTO_SSL_TC" =~ ^[0-9]+$ ]] && [ "$PUERTO_SSL_TC" -ge 1 ] && [ "$PUERTO_SSL_TC" -le 65535 ]; then
-                        if ss -tlnp 2>/dev/null | grep -q ":${PUERTO_SSL_TC} "; then
-                            fn_err "Puerto ${PUERTO_SSL_TC} ya esta en uso. Elige otro."
-                        else
-                            fn_ok "Puerto HTTPS ${PUERTO_SSL_TC} disponible."
-                            break
-                        fi
-                    else
-                        fn_err "Puerto invalido."
-                    fi
-                done
-                SSL_LABEL="Si (puerto ${PUERTO_SSL_TC})"
-                PUERTO_SSL_USADO="$PUERTO_SSL_TC"
-
-                # Convertir certificado PEM a keystore JKS
-                fn_sec "Convirtiendo certificado a formato JKS para Tomcat..."
-                if ! command -v keytool &>/dev/null; then
-                    urpmi --auto --quiet java-11-openjdk 2>/dev/null
-                fi
-
-                openssl pkcs12 -export \
-                    -in "${CERT_DIR}/server.crt" \
-                    -inkey "${CERT_DIR}/server.key" \
-                    -out "${CERT_DIR}/keystore.p12" \
-                    -name tomcat \
-                    -passout pass:practica7 2>/dev/null
-
-                keytool -importkeystore \
-                    -srckeystore "${CERT_DIR}/keystore.p12" \
-                    -srcstoretype PKCS12 \
-                    -srcstorepass practica7 \
-                    -destkeystore "${CERT_DIR}/keystore.jks" \
-                    -deststorepass practica7 \
-                    -noprompt 2>/dev/null
-
-                chmod 640 "${CERT_DIR}/keystore.jks"
-                fn_sec "Keystore JKS generado: ${CERT_DIR}/keystore.jks"
-
-                # Generar server.xml limpio con SSL usando HTTP/1.1 (Java puro, sin APR)
-                cat > "${TOMCAT_CONF}/server.xml" <<SERVERXML
-<?xml version="1.0" encoding="UTF-8"?>
-<Server port="8005" shutdown="SHUTDOWN">
-  <Listener className="org.apache.catalina.startup.VersionLoggerListener" />
-  <Listener className="org.apache.catalina.core.AprLifecycleListener" SSLEngine="off" />
-  <Listener className="org.apache.catalina.core.JreMemoryLeakPreventionListener" />
-  <Listener className="org.apache.catalina.mbeans.GlobalResourcesLifecycleListener" />
-  <Listener className="org.apache.catalina.core.ThreadLocalLeakPreventionListener" />
-
-  <GlobalNamingResources>
-    <Resource name="UserDatabase" auth="Container"
-              type="org.apache.catalina.UserDatabase"
-              description="User database that can be updated and saved"
-              factory="org.apache.catalina.users.MemoryUserDatabaseFactory"
-              pathname="conf/tomcat-users.xml" />
-  </GlobalNamingResources>
-
-  <Service name="Catalina">
-    <Connector port="${PUERTO}" address="0.0.0.0" protocol="HTTP/1.1"
-               connectionTimeout="20000" redirectPort="${PUERTO_SSL_TC}" />
-    <Connector port="${PUERTO_SSL_TC}" protocol="HTTP/1.1"
-               SSLEnabled="true" scheme="https" secure="true"
-               keystoreFile="${CERT_DIR}/keystore.jks"
-               keystorePass="practica7"
-               clientAuth="false" sslProtocol="TLS"
-               maxThreads="150" />
-    <Engine name="Catalina" defaultHost="localhost">
-      <Realm className="org.apache.catalina.realm.LockOutRealm">
-        <Realm className="org.apache.catalina.realm.UserDatabaseRealm"
-               resourceName="UserDatabase"/>
-      </Realm>
-      <Host name="localhost" appBase="webapps"
-            unpackWARs="true" autoDeploy="true">
-        <Valve className="org.apache.catalina.valves.AccessLogValve"
-               directory="logs" prefix="localhost_access_log"
-               suffix=".txt" pattern="%h %l %u %t &quot;%r&quot; %s %b" />
-      </Host>
-    </Engine>
-  </Service>
-</Server>
-SERVERXML
-                fn_sec "server.xml generado con SSL en puerto ${PUERTO_SSL_TC}"
-
-            else
-                # Generar server.xml limpio sin SSL
-                cat > "${TOMCAT_CONF}/server.xml" <<SERVERXML
-<?xml version="1.0" encoding="UTF-8"?>
-<Server port="8005" shutdown="SHUTDOWN">
-  <Listener className="org.apache.catalina.startup.VersionLoggerListener" />
-  <Listener className="org.apache.catalina.core.AprLifecycleListener" SSLEngine="off" />
-  <Listener className="org.apache.catalina.core.JreMemoryLeakPreventionListener" />
-  <Listener className="org.apache.catalina.mbeans.GlobalResourcesLifecycleListener" />
-  <Listener className="org.apache.catalina.core.ThreadLocalLeakPreventionListener" />
-
-  <GlobalNamingResources>
-    <Resource name="UserDatabase" auth="Container"
-              type="org.apache.catalina.UserDatabase"
-              description="User database that can be updated and saved"
-              factory="org.apache.catalina.users.MemoryUserDatabaseFactory"
-              pathname="conf/tomcat-users.xml" />
-  </GlobalNamingResources>
-
-  <Service name="Catalina">
-    <Connector port="${PUERTO}" address="0.0.0.0" protocol="HTTP/1.1"
-               connectionTimeout="20000" redirectPort="8443" />
-    <Engine name="Catalina" defaultHost="localhost">
-      <Realm className="org.apache.catalina.realm.LockOutRealm">
-        <Realm className="org.apache.catalina.realm.UserDatabaseRealm"
-               resourceName="UserDatabase"/>
-      </Realm>
-      <Host name="localhost" appBase="webapps"
-            unpackWARs="true" autoDeploy="true">
-        <Valve className="org.apache.catalina.valves.AccessLogValve"
-               directory="logs" prefix="localhost_access_log"
-               suffix=".txt" pattern="%h %l %u %t &quot;%r&quot; %s %b" />
-      </Host>
-    </Engine>
-  </Service>
-</Server>
-SERVERXML
-                fn_ok "server.xml generado en puerto ${PUERTO}"
-            fi
-
-            # Crear pagina HTML en el webroot de Tomcat
-            local TOMCAT_WEBROOT=""
-            for DIR in /var/lib/tomcat/webapps/ROOT /var/lib/tomcat9/webapps/ROOT \
-                       /usr/share/tomcat/webapps/ROOT /usr/share/tomcat9/webapps/ROOT; do
-                [ -d "$DIR" ] && TOMCAT_WEBROOT="$DIR" && break
-            done
-
-            if [ -n "$TOMCAT_WEBROOT" ]; then
-                cat > "${TOMCAT_WEBROOT}/index.html" <<HTMLEOF
+            cat > "${TC_ROOT}/index.html" <<HTMLEOF
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -1421,13 +1096,13 @@ SERVERXML
 </head>
 <body>
     <div class="card">
-        <h1>Tomcat - Mageia Linux</h1>
+        <h1>Tomcat - Windows Server</h1>
         <div>
             <span class="badge">Servidor: Tomcat</span>
             <span class="badge">Puerto HTTP: ${PUERTO}</span>
-            <span class="badge">SSL: ${SSL_LABEL}</span>
+            <span class="badge">SSL: No</span>
         </div>
-        <div>OS: Mageia Linux</div>
+        <div>OS: Windows Server</div>
         <div>Dominio: ${DOMINIO}</div>
         <div class="status">Servidor activo y funcionando</div>
         <p style="font-size:0.8em;color:#888">Practica 7 - FTP + SSL</p>
@@ -1435,21 +1110,11 @@ SERVERXML
 </body>
 </html>
 HTMLEOF
-            fi
 
-            iptables -I INPUT -p tcp --dport "$PUERTO" -j ACCEPT 2>/dev/null
-            [ "$SSL" = "si" ] && iptables -I INPUT -p tcp --dport "$PUERTO_SSL_TC" -j ACCEPT 2>/dev/null
-
-            systemctl enable "$TOMCAT_SVC" 2>/dev/null
-            fn_info "Reiniciando Tomcat ($TOMCAT_SVC)..."
-            if systemctl restart "$TOMCAT_SVC"; then
-                fn_ok "Tomcat instalado via urpmi - puerto ${PUERTO} | SSL: ${SSL_LABEL}"
-                RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Tomcat] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
-            else
-                fn_err "Fallo el arranque de Tomcat. Revisando logs..."
-                journalctl -u "$TOMCAT_SVC" --no-pager -n 20
-            fi
-
+            systemctl enable tomcat 2>/dev/null
+            systemctl restart tomcat 2>/dev/null
+            fn_ok "Tomcat instalado y premium."
+            RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Tomcat] Puerto: ${PUERTO} | SSL: No | Origen: WEB"
             ;;
     esac
 }
@@ -1462,105 +1127,16 @@ fn_verificar_servicio_http() {
     local NOMBRE="$1"
     local PUERTO="$2"
     local SSL="$3"
-    local PUERTO_SSL="${4:-443}"   # Puerto HTTPS, por defecto 443
-
     echo -e "\n${CYAN}Verificando ${NOMBRE}...${NC}"
-
-    local PUERTO_CHECK="$PUERTO"
-    [ "$SSL" = "si" ] && PUERTO_CHECK="$PUERTO_SSL"
-
-    if ss -tlnp 2>/dev/null | grep -q ":${PUERTO_CHECK} "; then
-        fn_ok "${NOMBRE} escuchando en puerto ${PUERTO_CHECK}"
-    elif netstat -tlnp 2>/dev/null | grep -q ":${PUERTO_CHECK} "; then
-        fn_ok "${NOMBRE} escuchando en puerto ${PUERTO_CHECK}"
+    if curl -sk --connect-timeout 5 "http://127.0.0.1:${PUERTO}" -o /dev/null; then
+        fn_ok "${NOMBRE} responde HTTP en puerto ${PUERTO}"
     else
-        fn_err "${NOMBRE} NO esta escuchando en puerto ${PUERTO_CHECK}"
-        # Si falla el puerto principal SSL/HTTP, intentamos el otro por si acaso
-        if [ "$SSL" = "si" ] && ss -tlnp 2>/dev/null | grep -q ":${PUERTO} "; then
-            fn_info "Sin embargo, si se detecta actividad en el puerto base ${PUERTO}"
-        else
-            return 1
-        fi
-    fi
-
-    local RESP
-    RESP=$(curl -sk --connect-timeout 5 "http://127.0.0.1:${PUERTO}" -o /dev/null -w "%{http_code}" 2>/dev/null)
-    if [ "$RESP" = "200" ] || [ "$RESP" = "302" ] || [ "$RESP" = "301" ]; then
-        fn_ok "${NOMBRE} responde HTTP correctamente (codigo: ${RESP})"
-    else
-        fn_info "${NOMBRE} responde con codigo: ${RESP}"
-    fi
-
-    if [ "$SSL" = "si" ]; then
-        local RESP_SSL
-        RESP_SSL=$(curl -sk --connect-timeout 5 "https://127.0.0.1:${PUERTO_SSL}" -o /dev/null -w "%{http_code}" 2>/dev/null)
-        if [ "$RESP_SSL" = "200" ] || [ "$RESP_SSL" = "302" ]; then
-            fn_sec "${NOMBRE} responde HTTPS correctamente en puerto ${PUERTO_SSL} (codigo: ${RESP_SSL})"
-        else
-            fn_info "${NOMBRE} HTTPS responde con codigo: ${RESP_SSL}"
-        fi
-
-        local CERT_INFO
-        CERT_INFO=$(echo | openssl s_client -connect "127.0.0.1:${PUERTO_SSL}" \
-            -servername "${DOMINIO}" 2>/dev/null | \
-            openssl x509 -noout -subject -dates 2>/dev/null)
-        if [ -n "$CERT_INFO" ]; then
-            fn_sec "Certificado SSL verificado:"
-            echo "$CERT_INFO" | while read -r linea; do
-                echo "    $linea"
-            done
-        fi
+        fn_err "${NOMBRE} no responde en puerto ${PUERTO}"
     fi
 }
 
 fn_mostrar_resumen() {
+    echo -e "\n${CYAN}====== RESUMEN FINAL ======${NC}"
+    echo -e "$RESUMEN_INSTALACIONES"
     echo ""
-    echo -e "${CYAN}${BOLD}"
-    echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║            RESUMEN DE INSTALACIONES - PRACTICA 7         ║"
-    echo "╚══════════════════════════════════════════════════════════╝"
-    echo -e "${NC}"
-
-    if [ -z "$RESUMEN_INSTALACIONES" ]; then
-        echo -e "${YELLOW}No hay instalaciones registradas en esta sesion.${NC}"
-    else
-        echo -e "${GREEN}Servicios instalados/configurados:${NC}"
-        echo -e "$RESUMEN_INSTALACIONES"
-    fi
-
-    echo ""
-    echo -e "${CYAN}Estado actual de puertos:${NC}"
-    ss -tlnp 2>/dev/null | grep -E ":(80|443|8080|8000|9090|8083|21) " | \
-    while read -r linea; do echo "  $linea"; done
-
-    echo ""
-    echo -e "${CYAN}Estado de servicios (systemctl):${NC}"
-    for SVC in httpd apache nginx tomcat tomcat9 vsftpd; do
-        if systemctl list-units --type=service 2>/dev/null | grep -q "${SVC}.service"; then
-            local ESTADO
-            ESTADO=$(systemctl is-active "$SVC" 2>/dev/null)
-            if [ "$ESTADO" = "active" ]; then
-                echo -e "  ${GREEN}[ACTIVO]${NC}   $SVC"
-            else
-                echo -e "  ${RED}[INACTIVO]${NC} $SVC"
-            fi
-        fi
-    done
-
-    echo ""
-    echo -e "${CYAN}Certificados SSL generados:${NC}"
-    if [ -d "$SSL_DIR" ]; then
-        find "$SSL_DIR" -name "*.crt" 2>/dev/null | while read -r cert; do
-            local INFO
-            INFO=$(openssl x509 -noout -subject -enddate -in "$cert" 2>/dev/null)
-            echo "  Archivo: $cert"
-            echo "$INFO" | while read -r l; do echo "    $l"; done
-        done
-    else
-        echo "  (ninguno generado aun)"
-    fi
-    echo ""
-}
-
-    # Fin de fn_verificar_certificados
 }

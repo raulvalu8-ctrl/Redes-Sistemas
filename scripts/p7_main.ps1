@@ -40,6 +40,7 @@ while ($true) {
         ' 3) Instalar Nginx  (Hibrido FTP/Web) ',
         ' 4) Configurar FTPS (IIS FTP + SSL)   ',
         ' 5) Ver resumen de instalaciones      ',
+        ' 6) Configurar Repositorio FTP (Linux) ',
         ' 0) Salir                             '
     )
     
@@ -52,6 +53,7 @@ while ($true) {
         "3" { fn_instalar_servicio_hibrido "nginx" "Nginx" }
         "4" { fn_configurar_ftps }
         "5" { fn_mostrar_resumen }
+        "6" { fn_configurar_repo_ftp }
         "0" { 
             Write-Host "`nSaliendo..." -ForegroundColor Red
             Start-Sleep -Seconds 1

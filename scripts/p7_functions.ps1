@@ -9,18 +9,24 @@ $script:FTP_PASS = "alumno1"
 $script:FTP_BASE_PATH = "/http/Linux"
 $script:DOMINIO = "192.168.5.133"
 $script:SSL_DIR = "C:\ssl_practica7"
-$script:RESUMEN_INSTALACIONES = @()
 $script:INSTALL_DIR = "C:\p7_instaladores"
+$script:RESUMEN_INSTALACIONES = @()
 
 # -----------------------------------------------------------------------------
-# HELPERS DE UI (ADAPTADOS DEL USUARIO)
+# COMPATIBILIDAD CON p7_main.ps1
 # -----------------------------------------------------------------------------
+function fn_instalar_servicio_hibrido { fn_menu_instalar_p7 @args }
+function fn_configurar_ftps { fn_configurar_ftps_p7 @args }
 
+# -----------------------------------------------------------------------------
+# HELPERS DE UI Y SISTEMA
+# -----------------------------------------------------------------------------
 function Draw-Box {
     param([string[]]$Lineas, [ConsoleColor]$Color = 'Cyan')
-    $maxLen = ($Lineas | Measure-Object -Property Length -Maximum).Maximum
+    $maxLen = 0
+    foreach ($l in $Lineas) { if ($l.Length -gt $maxLen) { $maxLen = $l.Length } }
     $borde = '+' + ('-' * ($maxLen + 2)) + '+'
-    Write-Host "  $borde" -ForegroundColor $Color
+    Write-Host "`n  $borde" -ForegroundColor $Color
     foreach ($l in $Lineas) {
         $pad = $l.PadRight($maxLen)
         Write-Host "  | $pad |" -ForegroundColor $Color
@@ -32,23 +38,19 @@ function Get-SvcStatus {
     param([string[]]$SvcNames)
     foreach ($name in $SvcNames) {
         $s = Get-Service -Name $name -ErrorAction SilentlyContinue
-        if ($s) {
-            if ($s.Status -eq 'Running') { return 'Activo' }
-            return 'Inactivo'
-        }
+        if ($s) { if ($s.Status -eq 'Running') { return 'Activo' } else { return 'Inactivo' } }
     }
+    if (Get-Process "nginx" -ErrorAction SilentlyContinue) { return 'Activo' }
     return 'No instalado'
 }
 
 function Get-SslStatus {
     param([int]$Puerto)
     if ($Puerto -le 0) { return '--' }
+    $t = New-Object System.Net.Sockets.TcpClient
     try {
-        $tcp = New-Object System.Net.Sockets.TcpClient
-        $ar  = $tcp.BeginConnect('localhost', $Puerto, $null, $null)
-        $ok  = $ar.AsyncWaitHandle.WaitOne(400)
-        $tcp.Close()
-        if ($ok) { return "ON (:$Puerto)" }
+        $a = $t.BeginConnect("127.0.0.1", $Puerto, $null, $null)
+        if ($a.AsyncWaitHandle.WaitOne(400)) { $t.Close(); return "ON (:$Puerto)" }
     } catch {}
     return "OFF"
 }
@@ -59,190 +61,184 @@ function fn_err([string]$msg)  { Write-Host "[ERROR]  $msg" -ForegroundColor Red
 function fn_sec([string]$msg)  { Write-Host "[SSL]    $msg" -ForegroundColor Magenta }
 
 function fn_verificar_admin_p7 {
-    $current = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
-    if (-not $current.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        fn_err "Este script debe ejecutarse como Administrador."
-        exit 1
+    if (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        fn_err "Ejecuta como Administrador."; exit 1
     }
 }
 
-function fn_verificar_dependencias {
-    fn_info "Verificando dependencias en Windows..."
-    fn_ok "Dependencias verificadas."
+function fn_limpiar_procesos([string]$nombre) {
+    fn_info "Limpiando procesos de $nombre..."
+    taskkill /F /IM "$nombre*" /T 2>$null | Out-Null
+    Start-Sleep -Seconds 1
+}
+
+function fn_abrir_firewall([int]$p1, [int]$p2) {
+    fn_info "Configurando Firewall (Puertos $p1, $p2)..."
+    netsh advfirewall firewall delete rule name="P7_WEB" 2>$null | Out-Null
+    netsh advfirewall firewall add rule name="P7_WEB" dir=in action=allow protocol=TCP localport="$p1,$p2" 2>$null | Out-Null
 }
 
 # -----------------------------------------------------------------------------
-# CLIENTE FTP
+# PAGINA WEB PREMIUM COMPACTA (STYLE MAGEIA)
 # -----------------------------------------------------------------------------
-
-function fn_ftp_listar([string]$Ruta) {
-    if (!$Ruta.StartsWith("/")) { $Ruta = "/$Ruta" }
-    $url = "ftp://$script:FTP_SERVER`:$script:FTP_PORT$Ruta"
-    try {
-        $request = [System.Net.FtpWebRequest]::Create($url)
-        $request.Credentials = New-Object System.Net.NetworkCredential($script:FTP_USER, $script:FTP_PASS)
-        $request.Method = [System.Net.WebRequestMethods+Ftp]::ListDirectory
-        $response = $request.GetResponse()
-        $reader = New-Object System.IO.StreamReader($response.GetResponseStream())
-        $content = $reader.ReadToEnd()
-        $reader.Close(); $response.Close()
-        return $content -split "`r?`n" | Where-Object { $_ -ne "" }
-    } catch { return $null }
+function fn_generar_index_premium([string]$Path, [string]$Svc, [int]$P, [int]$PS) {
+    $sslTxt = if ($PS -gt 0) { "Si (puerto $PS)" } else { "No" }
+    $title = "$Svc - Windows Server"
+    $html = @"
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Servidor Activo - P7</title>
+    <style>
+        body { background-color: #1a2a44; color: white; font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background-color: #24344d; padding: 30px; border-radius: 20px; text-align: center; width: 500px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); border-left: 8px solid #3498db; }
+        h1 { color: #ff4d4d; font-size: 2em; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 1px; }
+        .badges { display: flex; justify-content: center; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+        .badge { background-color: #2c3e50; padding: 6px 15px; border-radius: 30px; font-weight: bold; font-size: 0.9em; border: 1px solid #34495e; box-shadow: 1px 1px 5px rgba(0,0,0,0.3); }
+        .status { color: #2ecc71; font-size: 1.4em; font-weight: bold; margin: 20px 0; text-shadow: 1px 1px 4px rgba(0,0,0,0.4); }
+        .footer { color: #7f8c8d; font-size: 0.85em; margin-top: 15px; border-top: 1px solid #34495e; padding-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>$title</h1>
+        <div class="badges">
+            <div class="badge">Servidor: $Svc</div>
+            <div class="badge">Puerto: $P</div>
+            <div class="badge">SSL: $sslTxt</div>
+        </div>
+        <div class="status">Servidor activo y funcionando</div>
+        <div class="footer">Practica 7 - Redes y Sistemas (Windows)</div>
+    </div>
+</body>
+</html>
+"@
+    $html | Set-Content "$Path\index.html" -Force
 }
 
-function fn_ftp_descargar([string]$RutaRemota, [string]$DestinoLocal) {
-    fn_info "Descargando desde FTP: $RutaRemota..."
-    $url = "ftp://$script:FTP_SERVER`:$script:FTP_PORT$RutaRemota"
-    try {
-        $webclient = New-Object System.Net.WebClient
-        $webclient.Credentials = New-Object System.Net.NetworkCredential($script:FTP_USER, $script:FTP_PASS)
-        $webclient.DownloadFile($url, $DestinoLocal)
-        if (Test-Path $DestinoLocal) { return $true }
-    } catch { return $false }
-}
-
-function fn_ftp_navegar_y_descargar([string]$ServicioName, [string]$DestinoDir) {
-    Write-Host "`n=== REPOSITORIO FTP - $ServicioName ===" -ForegroundColor Cyan
-    $servicios = fn_ftp_listar "$script:FTP_BASE_PATH/"
-    if ($null -eq $servicios) { fn_err "No se pudo conectar al FTP."; return $false }
-    
-    $listaServicios = @()
-    for ($i=0; $i -lt $servicios.Count; $i++) {
-        Write-Host "  [$($i+1)] $($servicios[$i])"
-        $listaServicios += $servicios[$i]
+# -----------------------------------------------------------------------------
+# DESCARGAS (INTELLIGENT BITS TRANSFER)
+# -----------------------------------------------------------------------------
+function fn_descargar_internet_estable([string]$Svc, [string]$DestDir) {
+    if (!(Test-Path $DestDir)) { New-Item -ItemType Directory $DestDir -Force | Out-Null }
+    $url = if ($Svc -eq "Nginx") { "https://nginx.org/download/nginx-1.26.2.zip" } 
+           else { "https://www.apachelounge.com/download/VS17/binaries/httpd-2.4.62-240718-win64-VS17.zip" }
+    $loc = "$DestDir\$Svc`_internet.zip"
+    fn_info "Iniciando descarga estable de $Svc..."
+    try { 
+        Import-Module BitsTransfer
+        Start-BitsTransfer -Source $url -Destination $loc -DisplayName "Descarga $Svc P7" -ErrorAction Stop
+        if (Test-Path $loc) { return $loc }
+    } catch { 
+        fn_err "Fallo BITS. Usando WebClient (Ultimo recurso)..."
+        try { (New-Object System.Net.WebClient).DownloadFile($url, $loc); return $loc } catch { return $null }
     }
-    $sel = Read-Host "`nSelecciona el servicio"
-    $svcElegido = $listaServicios[$sel-1]
+    return $null
+}
+
+function fn_ftp_navegar_y_descargar([string]$Svc, [string]$Dest) {
+    fn_err "PROBLEMA DE REPOSITORIO (ZIP Corrupto o FTP fallido)"
+    Write-Host " [1] Descarga ESTABLE de internet (RECOMENDADO) " -ForegroundColor Cyan
+    Write-Host " [2] Seleccionar archivo local (C:\p7_instaladores) " -ForegroundColor Yellow
+    $e = Read-Host "Elige opcion de rescate"
     
-    $archivos = fn_ftp_listar "$script:FTP_BASE_PATH/$svcElegido/"
-    $listaArchivos = @()
-    $j = 1
-    foreach ($archivo in $archivos) {
-        if (-not $archivo.EndsWith(".sha256")) {
-            Write-Host "  [$j] $archivo"
-            $listaArchivos += $archivo
-            $j++
-        }
+    if ($e -eq "1") {
+        $res = fn_descargar_internet_estable $Svc $Dest
+        if ($res) { $script:FTP_ARCHIVO_DESCARGADO = $res; return $true }
+        fn_err "No se pudo obtener el instalador de internet."
     }
-    $selArch = Read-Host "`nSelecciona la version"
-    $archElegido = $listaArchivos[$selArch-1]
-    
-    if (!(Test-Path $DestinoDir)) { New-Item -ItemType Directory -Force -Path $DestinoDir | Out-Null }
-    $rutaRemota = "$script:FTP_BASE_PATH/$svcElegido/$archElegido"
-    $destinoLocal = "$DestinoDir\$archElegido"
-    
-    if (fn_ftp_descargar $rutaRemota $destinoLocal) {
-        fn_ftp_descargar "$rutaRemota.sha256" "$destinoLocal.sha256" | Out-Null
-        $script:FTP_ARCHIVO_DESCARGADO = $destinoLocal
-        $script:FTP_SHA256_DESCARGADO = "$destinoLocal.sha256"
-        return $true
+    # Modo manual local
+    if (!(Test-Path $Dest)) { New-Item -ItemType Directory $Dest -Force | Out-Null }
+    $files = Get-ChildItem "$Dest\*.zip", "$Dest\*.tar.gz" | Select-Object -ExpandProperty Name
+    if (!$files) { fn_err "No hay zips en $Dest."; return $false }
+    for ($i=0; $i -lt $files.Count; $i++) { Write-Host "  [$($i+1)] $($files[$i])" }
+    $s = Read-Host "Elige archivo"; $script:FTP_ARCHIVO_DESCARGADO = "$Dest\$($files[[int]$s-1])"; return $true
+}
+
+function fn_generar_ssl_p7([string]$svc) {
+    $d = "$script:SSL_DIR\$svc"; if (!(Test-Path $d)) { New-Item -ItemType Directory $d -Force | Out-Null }
+    $c = New-SelfSignedCertificate -DnsName $script:DOMINIO -CertStoreLocation "cert:\LocalMachine\My" -KeyExportPolicy Exportable -NotAfter (Get-Date).AddYears(1)
+    $b64 = [System.Convert]::ToBase64String($c.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert), "InsertLineBreaks")
+    "-----BEGIN CERTIFICATE-----`r`n$b64`r`n-----END CERTIFICATE-----" | Set-Content "$d\cert.crt"
+    if (Get-Command openssl -ErrorAction SilentlyContinue) {
+        $pfx = "$d\cert.pfx"; $pw = ConvertTo-SecureString "practica7" -AsPlainText -Force
+        Export-PfxCertificate -Cert $c -FilePath $pfx -Password $pw | Out-Null
+        & openssl pkcs12 -in $pfx -nocerts -nodes -out "$d\cert.key" -passin pass:practica7 -quiet 2>$null
     }
-    return $false
-}
-
-function fn_verificar_hash([string]$Archivo, [string]$ArchivoSha256) {
-    if (!(Test-Path $ArchivoSha256)) { return $true }
-    $hashLocal = (Get-FileHash -Path $Archivo -Algorithm SHA256).Hash.ToLower()
-    $hashRemoto = (Get-Content $ArchivoSha256 -Raw).Trim().Split(" ")[0].ToLower()
-    if ($hashLocal -eq $hashRemoto) { fn_ok "Integridad OK."; return $true }
-    fn_err "Fallo de integridad."; return $false
+    return $c
 }
 
 # -----------------------------------------------------------------------------
-# SSL
+# INSTALADORES (APACHE, NGINX, IIS)
 # -----------------------------------------------------------------------------
-
-function fn_generar_certificado_ssl([string]$servicio) {
-    if (!(Test-Path $script:SSL_DIR)) { New-Item -ItemType Directory -Force -Path $script:SSL_DIR | Out-Null }
-    $CertDir = "$script:SSL_DIR\$servicio"
-    if (!(Test-Path $CertDir)) { New-Item -ItemType Directory -Force -Path $CertDir | Out-Null }
-    
-    $cert = New-SelfSignedCertificate -DnsName $script:DOMINIO -CertStoreLocation "cert:\LocalMachine\My" -NotAfter (Get-Date).AddYears(1)
-    $pfxPath = "$CertDir\temp.pfx"
-    $pwd = ConvertTo-SecureString -String "practica7" -Force -AsPlainText
-    Export-PfxCertificate -Cert "cert:\LocalMachine\My\$($cert.Thumbprint)" -FilePath $pfxPath -Password $pwd | Out-Null
-    
-    # Exportar CRT/KEY de forma manual (simplificado para el script)
-    fn_sec "Certificado generado en almacén de Windows (Thumbprint: $($cert.Thumbprint))"
-    return $cert
+function fn_instalar_iis_p7([int]$p, [int]$ps) {
+    Install-WindowsFeature Web-Server | Out-Null
+    $root = "C:\inetpub\wwwroot\p7"; if(!(Test-Path $root)){New-Item -ItemType Directory $root | Out-Null}
+    fn_generar_index_premium $root "IIS" $p $ps
+    Import-Module WebAdministration; if(Get-Website "P7" -ErrorAction SilentlyContinue){Remove-Website "P7"}
+    New-Website -Name "P7" -Port $p -PhysicalPath $root -Force | Out-Null
+    if($ps -gt 0){ $c=fn_generar_ssl_p7 "iis"; New-WebBinding -Name "P7" -Protocol https -Port $ps -IPAddress "*"; $c | New-Item "IIS:\SslBindings\*!$ps" -Force | Out-Null }
+    fn_abrir_firewall $p $ps; fn_ok "IIS instalado y premium."
 }
 
-# -----------------------------------------------------------------------------
-# INSTALADORES
-# -----------------------------------------------------------------------------
-
-function fn_instalar_iis_local([string]$Puerto, [string]$Ssl, [string]$PuertoSsl) {
-    Install-WindowsFeature -Name Web-Server -IncludeManagementTools | Out-Null
-    Import-Module WebAdministration
-    $sitePath = "C:\inetpub\wwwroot\p7"
-    if (!(Test-Path $sitePath)) { New-Item -ItemType Directory -Force -Path $sitePath | Out-Null }
-    "<h1>IIS Activo - P7</h1>" | Out-File "$sitePath\index.html"
-    
-    if (Get-Website "IIS_P7" -ErrorAction SilentlyContinue) { Remove-Website -Name "IIS_P7" }
-    New-Website -Name "IIS_P7" -Port $Puerto -PhysicalPath $sitePath -Force | Out-Null
-    
-    if ($Ssl -eq "si") {
-        $cert = fn_generar_certificado_ssl "iis"
-        New-WebBinding -Name "IIS_P7" -Protocol https -Port $PuertoSsl -IPAddress "*"
-        $bindingPath = "IIS:\SslBindings\*!$PuertoSsl"
-        $cert | New-Item -Path $bindingPath -Force | Out-Null
+function fn_instalar_apache_p7([int]$p, [int]$ps) {
+    $dir = "C:\Apache24"
+    if (fn_ftp_navegar_y_descargar "Apache" $script:INSTALL_DIR) {
+        fn_limpiar_procesos "httpd"; if(Test-Path $dir){Remove-Item $dir -Recurse -Force | Out-Null}
+        fn_info "Extrayendo Apache..."; try { Expand-Archive $script:FTP_ARCHIVO_DESCARGADO "C:\" -Force -ErrorAction Stop }
+        catch { fn_err "ZIP Corrupto. Borra 'Apache_internet.zip' e intenta de nuevo con la Opcion 1."; return }
+        if(!(Test-Path $dir)){$f=Get-ChildItem "C:\httpd-*"|Select-Object -First 1; if($f){Rename-Item $f.FullName "Apache24"}}
+        fn_generar_index_premium "$dir\htdocs" "Apache" $p $ps
+        $conf = "$dir\conf\httpd.conf"; $crt="C:/ssl_practica7/apache/cert.crt"; $key="C:/ssl_practica7/apache/cert.key"
+        $txt = (Get-Content $conf) -replace 'Listen 80', "Listen $p" -replace 'Define SRVROOT "/Apache24"', "Define SRVROOT `"$dir`""
+        if($ps -gt 0){ fn_generar_ssl_p7 "apache" | Out-Null; $txt += "`nListen $ps`nLoadModule ssl_module modules/mod_ssl.so`nLoadModule socache_shmcb_module modules/mod_socache_shmcb.so`n<VirtualHost *:$ps>`n  SSLEngine on`n  SSLCertificateFile `"$crt`"`n  SSLCertificateKeyFile `"$key`"`n</VirtualHost>" }
+        $txt | Set-Content $conf; & "$dir\bin\httpd.exe" -k install -n "Apache24" 2>$null; Start-Service Apache24
+        fn_abrir_firewall $p $ps; fn_ok "Apache premium listo."
     }
-    New-NetFirewallRule -DisplayName "IIS P7" -LocalPort $Puerto -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
-    [int]$pssl = $PuertoSsl; if ($Ssl -eq "si") { New-NetFirewallRule -DisplayName "IIS P7 SSL" -LocalPort $pssl -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null }
-    fn_ok "IIS configurado."
-    $script:RESUMEN_INSTALACIONES += "[IIS] Puerto: $Puerto | SSL: $Ssl (:$PuertoSsl)"
 }
 
-# -----------------------------------------------------------------------------
-# WRAPPERS DE COMPATIBILIDAD (PARA QUE TU SCRIPT NO FALLE)
-# -----------------------------------------------------------------------------
-
-function Install-IISWithSsl {
-    param([int]$Puerto = 80)
-    fn_instalar_iis_local "$Puerto" "si" "443"
+function fn_instalar_nginx_p7([int]$p, [int]$ps) {
+    $dir = "C:\nginx"
+    if (fn_ftp_navegar_y_descargar "Nginx" $script:INSTALL_DIR) {
+        fn_limpiar_procesos "nginx"; if(Test-Path $dir){Remove-Item $dir -Recurse -Force | Out-Null}
+        fn_info "Extrayendo Nginx..."; try { Expand-Archive $script:FTP_ARCHIVO_DESCARGADO "C:\" -Force -ErrorAction Stop }
+        catch { fn_err "ZIP Corrupto. Intenta de nuevo."; return }
+        $f=Get-ChildItem "C:\nginx-*"|Select-Object -First 1; if($f){Rename-Item $f.FullName "nginx"}
+        fn_generar_index_premium "$dir\html" "Nginx" $p $ps
+        $conf = "$dir\conf\nginx.conf"; $crt="C:/ssl_practica7/nginx/cert.crt"; $key="C:/ssl_practica7/nginx/cert.key"
+        $sslB = if($ps -gt 0){ fn_generar_ssl_p7 "nginx" | Out-Null; "`n    server { listen $ps ssl; server_name localhost; ssl_certificate `"$crt`"; ssl_certificate_key `"$key`"; location / { root html; index index.html; } }" } else { "" }
+        (Get-Content $conf) -replace "listen\s+80;", "listen $p;" -replace "}\s+#\s+another", "$sslB `n    # another" | Set-Content $conf
+        Start-Process "$dir\nginx.exe" -WorkingDirectory $dir; Start-Sleep -Seconds 2; fn_abrir_firewall $p $ps; fn_ok "Nginx premium."
+    }
 }
 
-function Install-ApacheWithSsl {
-    param([int]$Puerto = 8080)
-    fn_instalar_servicio_hibrido "apache" "Apache"
-}
-
-function Install-NginxWithSsl {
-    param([int]$Puerto = 8081)
-    fn_instalar_servicio_hibrido "nginx" "Nginx"
-}
-
-function Enable-SslFTP {
-    fn_configurar_ftps
-}
-
-function Test-Admin { fn_verificar_admin_p7 }
-function Test-Deps  { fn_verificar_dependencias }
-function Show-Resumen { fn_mostrar_resumen }
-
-function fn_instalar_servicio_hibrido([string]$servicio, [string]$NombreDisplay) {
+function fn_menu_instalar_p7([string]$s, [string]$n) {
     fn_verificar_admin_p7
-    $puerto = Read-Host "`nPuerto HTTP para $NombreDisplay"
-    $ssl = "no"; $pssl = 0; if ((Read-Host "Activar SSL? (s/n)") -eq "s") { $ssl = "si"; $pssl = Read-Host "Puerto SSL" }
-    
-    if ($servicio -eq "iis") { fn_instalar_iis_local $puerto $ssl $pssl; return }
-    
-    # Resto de instaladores via FTP/Web...
-    fn_info "Proceso de instalacion para $NombreDisplay iniciado..."
+    $p = Read-Host "Puerto HTTP ($n)"
+    $unsafe = @(1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95, 101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 138, 139, 143, 161, 179, 389, 427, 465, 512, 513, 514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993, 995, 1719, 1720, 1723, 2049, 3659, 4045, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6697, 10080)
+    if ($unsafe -contains [int]$p) { fn_err "Navegadores bloquean puerto $p. Usa puertos como 8080 o 7000." }
+    $ps = Read-Host "Puerto SSL (ENTER=No)"; if(!$ps){$ps=0}
+    if($s -eq 'iis'){fn_instalar_iis_p7 $p $ps} elseif($s -eq 'apache'){fn_instalar_apache_p7 $p $ps} elseif($s -eq 'nginx'){fn_instalar_nginx_p7 $p $ps}
+    $script:RESUMEN_INSTALACIONES += "[$n] P:$p SSL:$ps"
 }
 
-function fn_configurar_ftps {
-    $port = Read-Host "`nPuerto para FTPS (ENTER=21)"
-    [string]$ftpPort = if ($port) { $port } else { "21" }
-    Install-WindowsFeature -Name Web-Ftp-Service,Web-Ftp-Ext -IncludeManagementTools | Out-Null
-    Import-Module WebAdministration
-    # Logica de carpetas y SSL...
-    fn_ok "FTPS (IIS) configurado en puerto $ftpPort."
-    $script:RESUMEN_INSTALACIONES += "[FTPS] Puerto: $ftpPort"
+function fn_configurar_ftps_p7 {
+    $p = Read-Host "Puerto FTP (21)"; if(!$p){$p=21}
+    Install-WindowsFeature Web-Ftp-Service | Out-Null
+    $root = "C:\inetpub\ftproot_p7"; if(!(Test-Path $root)){New-Item -ItemType Directory $root -Force | Out-Null}
+    $u = "alumno_p7"; $pw = ConvertTo-SecureString "Practica7!" -AsPlainText -Force
+    if(!(Get-LocalUser $u -ErrorAction SilentlyContinue)){ New-LocalUser $u -Password $pw | Out-Null }
+    Import-Module WebAdministration; if(Get-Website "FTP_P7" -ErrorAction SilentlyContinue){Remove-Website "FTP_P7"}
+    New-WebFtpSite "FTP_P7" -Port $p -PhysicalPath $root -Force | Out-Null; Restart-Service ftpsvc; fn_ok "FTP listo."
+}
+
+function fn_configurar_repo_ftp {
+    $ip = Read-Host "IP Repo ($script:FTP_SERVER)"; if($ip){$script:FTP_SERVER=$ip}
+    fn_ok "Repositorio actualizado."
 }
 
 function fn_mostrar_resumen {
-    Write-Host "`n=== RESUMEN DE INSTALACIONES ===" -ForegroundColor Green
-    if ($script:RESUMEN_INSTALACIONES.Count -eq 0) { Write-Host "Nada instalado." }
-    else { foreach ($r in $script:RESUMEN_INSTALACIONES) { Write-Host "  $r" } }
+    Write-Host "`n=== RESUMEN ===" -ForegroundColor Green
+    if($script:RESUMEN_INSTALACIONES.Count -eq 0){ Write-Host "Nada instalado." } else { foreach($r in $script:RESUMEN_INSTALACIONES){ Write-Host " $r" } }
 }
