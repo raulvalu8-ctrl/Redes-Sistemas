@@ -730,10 +730,27 @@ function fn_configurar_ftps {
     New-NetFirewallRule -DisplayName "FTPS P7 Control" -Direction Inbound -LocalPort 21 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
     New-NetFirewallRule -DisplayName "FTPS P7 Datos" -Direction Inbound -LocalPort 990 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
     
+    fn_info "Configurando acceso ANONIMO para el servidor FTP..."
+    Set-WebConfiguration "/system.ftpServer/security/authentication/anonymousAuthentication" -value @{enabled="true"} -PSPath "IIS:\Sites\$siteName"
+    
+    # Autorizar lectura anonima (?)
+    # Primero limpiar cualquier regla anonima previa para evitar duplicados
+    $authPath = "/system.ftpServer/security/authorization"
+    Clear-WebConfiguration $authPath -PSPath "IIS:\Sites\$siteName"
+    Add-WebConfiguration $authPath -value @{accessType="Allow"; users="?"; roles=""; permissions="Read" } -PSPath "IIS:\Sites\$siteName"
+    
+    # Asegurar permisos NTFS para el proceso de IIS FTP
+    fn_info "Ajustando permisos NTFS para lectura publica..."
+    $acl = Get-Acl $sitePath
+    $permission = "Everyone","ReadAndExecute","Allow"
+    $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule($permission)
+    $acl.SetAccessRule($accessRule)
+    Set-Acl $sitePath $acl
+    
     Start-Website -Name $siteName -ErrorAction SilentlyContinue
     
-    fn_ok "FTPS (IIS) Configurado: $script:DOMINIO (Solo acepta TLS explicito)."
-    $script:RESUMEN_INSTALACIONES += "[IIS FTP] FTPS Activo | Puerto: 21"
+    fn_ok "FTPS (IIS) Completado: $script:DOMINIO (Acepta TLS y ANONIMO)."
+    $script:RESUMEN_INSTALACIONES += "[IIS FTP] FTPS Activo | Anonimo: SI | Puerto: 21"
 }
 
 function fn_mostrar_resumen {
