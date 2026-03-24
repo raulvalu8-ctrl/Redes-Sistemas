@@ -678,6 +678,10 @@ function fn_instalar_servicio_hibrido([string]$servicio, [string]$NombreDisplay)
 function fn_configurar_ftps {
     Write-Host "`n====== CONFIGURACION SSL PARA FTP (IIS) ======" -ForegroundColor Blue
     
+    $siteName = "IIS_P7_FTP"
+    $ftpPort = Read-Host -Prompt "Ingresa el puerto para el servidor FTPS (ENTER para 21)"
+    if ([string]::IsNullOrWhiteSpace($ftpPort)) { $ftpPort = "21" }
+    
     $ftpInstalled = Get-WindowsFeature Web-Ftp-Service
     if ($ftpInstalled.InstallState -ne "Installed") {
         fn_info "El servicio FTP de IIS no esta instalado. Instalando rol (puede tardar minutos)..."
@@ -789,8 +793,8 @@ function fn_configurar_ftps {
         Start-Sleep -Seconds 1
     }
     
-    fn_info "Creando nuevo sitio FTP base: $siteName..."
-    New-WebFtpSite -Name $siteName -Port 21 -PhysicalPath $sitePath -Force | Out-Null
+    fn_info "Creando nuevo sitio FTP base: $siteName en puerto $ftpPort..."
+    New-WebFtpSite -Name $siteName -Port $ftpPort -PhysicalPath $sitePath -Force | Out-Null
     Start-Sleep -Seconds 5 # Pausa extendida para sincronizacion total (Final Fix)
 
 
@@ -806,9 +810,9 @@ function fn_configurar_ftps {
     & $appCmd set config "$siteName" /section:system.ftpServer/security/ssl /controlChannelPolicy:SslAllow /dataChannelPolicy:SslAllow /serverCertHash:$certHash /commit:apphost | Out-Null
 
     
-    fn_info "Limpiando y creando reglas de firewall para FTPS..."
+    fn_info "Limpiando y creando reglas de firewall para FTPS (Puerto $ftpPort)..."
     Remove-NetFirewallRule -DisplayName "FTPS P7*" -ErrorAction SilentlyContinue
-    New-NetFirewallRule -DisplayName "FTPS P7 Control" -Direction Inbound -LocalPort 21 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
+    New-NetFirewallRule -DisplayName "FTPS P7 Control" -Direction Inbound -LocalPort $ftpPort -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
     New-NetFirewallRule -DisplayName "FTPS P7 Pasivo" -Direction Inbound -LocalPort 10000-10100 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
 
     
@@ -840,7 +844,7 @@ function fn_configurar_ftps {
     } catch { }
     
     fn_ok "FTPS (IIS) Completado: $script:DOMINIO (Escritura SOLO en instaladores)."
-    $script:RESUMEN_INSTALACIONES += "[IIS FTP] FTPS Activo | Escritura: SOLO INSTALADORES | Puerto: 21"
+    $script:RESUMEN_INSTALACIONES += "[IIS FTP] FTPS Activo | Escritura: SOLO INSTALADORES | Puerto: $ftpPort"
 }
 
 function fn_mostrar_resumen {

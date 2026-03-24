@@ -843,27 +843,22 @@ fn_configurar_ftps() {
     cat "${SSL_DIR}/vsftpd/vsftpd.key" "${SSL_DIR}/vsftpd/vsftpd.crt" \
         > "${SSL_DIR}/vsftpd/vsftpd.pem"
     chmod 600 "${SSL_DIR}/vsftpd/vsftpd.key"
-    chmod 600 "${SSL_DIR}/vsftpd/vsftpd.pem"
-    fn_sec "Certificado FTPS generado."
+        -subj "/C=MX/ST=PUEBLA/L=PUEBLA/O=Reprobados/CN=$DOMINIO" 2>/dev/null
+    
+    # Backup conf original
+    VSFTPD_CONF="/etc/vsftpd/vsftpd.conf"
+    [ -f "$VSFTPD_CONF" ] && cp "$VSFTPD_CONF" "${VSFTPD_CONF}.bak"
 
-    # Detectar ruta del vsftpd.conf
-    local VSFTPD_CONF="/etc/vsftpd/vsftpd.conf"
-    [ ! -f "$VSFTPD_CONF" ] && [ -f "/etc/vsftpd.conf" ] && VSFTPD_CONF="/etc/vsftpd.conf"
-
-    if [ ! -f "$VSFTPD_CONF" ]; then
-        fn_err "No se encontro vsftpd.conf."
-        return 1
-    fi
-
-    fn_info "Usando configuracion en: $VSFTPD_CONF"
-
-    # Escribir configuracion completa compatible con vsftpd 3.0.5 Mageia
-    cat > "$VSFTPD_CONF" <<VSFTPDEOF
+    cat <<VSFTPDEOF > "$VSFTPD_CONF"
+# vsftpd.conf - Practica 7 Config Master
 listen=YES
+listen_port=$FTP_PORT_CUSTOM
+anonymous_enable=YES
 local_enable=YES
 write_enable=YES
 local_umask=022
 dirmessage_enable=YES
+use_localtime=YES
 xferlog_enable=YES
 connect_from_port_20=YES
 chroot_local_user=YES
@@ -871,20 +866,10 @@ allow_writeable_chroot=YES
 pasv_enable=YES
 pasv_min_port=10000
 pasv_max_port=10100
-pasv_address=${SERVER_IP}
-secure_chroot_dir=/var/run/vsftpd/empty
-pam_service_name=vsftpd
-listen_ipv6=NO
-check_shell=NO
 
-# Acceso anonimo activado - SOLO VISIVA (Lectura)
-anonymous_enable=YES
+# Anonymous Config
+anon_root=$FTP_ROOT
 no_anon_password=YES
-anon_root=/var/ftp_p7
-allow_anon_ssl=NO
-force_anon_data_ssl=NO
-force_anon_logins_ssl=NO
-local_root=/var/ftp_p7
 anon_upload_enable=YES
 anon_mkdir_write_enable=YES
 anon_other_write_enable=YES
@@ -907,7 +892,6 @@ rsa_private_key_file=${SSL_DIR}/vsftpd/vsftpd.key
 debug_ssl=YES
 implicit_ssl=NO
 seccomp_sandbox=NO
-allow_writeable_chroot=YES
 check_shell=NO
 VSFTPDEOF
 
