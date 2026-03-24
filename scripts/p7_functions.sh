@@ -808,11 +808,13 @@ anon_mkdir_write_enable=YES
 anon_other_write_enable=YES
 anon_world_readable_only=YES
 
-# FTPS - SSL/TLS - Practica 7 Global
+# FTPS - SSL/TLS - Maxima compatibilidad
 ssl_enable=YES
-allow_anon_ssl=NO
+allow_anon_ssl=YES
 force_local_data_ssl=YES
 force_local_logins_ssl=YES
+force_anon_data_ssl=NO
+force_anon_logins_ssl=NO
 ssl_tlsv1=YES
 ssl_sslv2=NO
 ssl_sslv3=NO
@@ -824,7 +826,11 @@ debug_ssl=YES
 implicit_ssl=NO
 seccomp_sandbox=NO
 allow_writeable_chroot=YES
+check_shell=NO
 VSFTPDEOF
+
+    # Asegurar que el usuario 'ftp' del sistema apunta a nuestra ruta
+    usermod -d "$FTP_ROOT" ftp 2>/dev/null
 
 
 
