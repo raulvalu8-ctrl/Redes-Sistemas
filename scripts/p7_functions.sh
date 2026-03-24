@@ -720,23 +720,24 @@ fn_instalar_servicio_hibrido() {
     read -r MODO
     
     if [ "$MODO" = "1" ]; then
+        # Preguntar por SSL para que "jale" en https
+        echo -ne "${YELLOW}¿Deseas activar SSL/HTTPS? (s/n): ${NC}"
+        read -r ACTIVAR_SSL
+        
+        if [[ "$ACTIVAR_SSL" =~ ^[sS]$ ]]; then
+            # El puerto HTTP se pide dentro de fn_instalar_web_con_ssl, 
+            # pasamos un puerto base sugerido
+            local PUERTO_SUG="80"
+            [ "$TIPO" = "nginx" ] && PUERTO_SUG="81"
+            [ "$TIPO" = "tomcat" ] && PUERTO_SUG="8080"
+            
+            fn_instalar_web_con_ssl "$TIPO" "$PUERTO_SUG" "si"
+            return
+        fi
+
+        # Si no quiere SSL, seguimos con el flujo basico de puerto custom
         echo -ne "${YELLOW}Ingresa el puerto deseado (ENTER para default): ${NC}"
         read -r PUERTO
-        
-        # Valores por defecto
-        if [ -z "$PUERTO" ]; then
-            case "$TIPO" in
-                "apache") PUERTO="80" ;;
-                "nginx")  PUERTO="81" ;;
-                "tomcat") PUERTO="8080" ;;
-            esac
-        fi
-        
-        # Verificar si el puerto esta ocupado
-        if ss -tlnp | grep -q ":${PUERTO} " && [ "$MODO" = "1" ]; then
-            fn_err "El puerto $PUERTO ya esta en uso. Elige otro."
-            return 1
-        fi
 
         fn_info "Iniciando aprovisionamiento WEB para $NOMBRE en puerto $PUERTO..."
         case "$TIPO" in
@@ -1109,7 +1110,7 @@ HTMLEOF
             fn_ok "Apache instalado via urpmi (servicio: httpd) - puerto ${PUERTO}"
             RESUMEN_INSTALACIONES="${RESUMEN_INSTALACIONES}\n[Apache] Puerto: ${PUERTO} | SSL: ${SSL_LABEL} | Origen: WEB"
             ;;
-
+        nginx)
             urpmi --auto --quiet nginx 2>/dev/null
 
             local NGINX_CONFD="/etc/nginx/conf.d"
