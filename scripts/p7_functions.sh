@@ -871,9 +871,20 @@ U1EOF
     
     printf "Servidor FTP Mageia - Jerarquia P7 Lista\n" > "${FTP_ROOT}/info.txt"
     
-    # Permisos para u1 y anonimo
-    chown -R ${FTP_USER}:ftp "$FTP_ROOT"
-    chmod -R 777 "$FTP_ROOT"
+    # Permisos CRITICOS para evitar "500 OOPS: writable root inside chroot"
+    # La raiz de chroot NO DEBE ser escribible por el usuario
+    fn_info "Ajustando permisos de ROOT para seguridad (chroot fix)..."
+    chown root:root "$FTP_ROOT"
+    chmod 555 "$FTP_ROOT"
+    
+    # Permisos para las subcarpetas (estas SI pueden ser escribibles)
+    chown -R ${FTP_USER}:ftp "${FTP_ROOT}/u1"
+    chown -R ${FTP_USER}:ftp "${FTP_ROOT}/http"
+    chown -R ${FTP_USER}:ftp "${FTP_ROOT}/general"
+    
+    chmod -R 777 "${FTP_ROOT}/u1" 2>/dev/null
+    chmod -R 777 "${FTP_ROOT}/http" 2>/dev/null
+    chmod -R 777 "${FTP_ROOT}/general" 2>/dev/null
     
     fn_ok "Estructura de directorios ${FTP_ROOT} creada y poblada."
     fn_info "Verificacion de carpetas (ls -R ${FTP_ROOT}):"
