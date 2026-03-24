@@ -808,22 +808,29 @@ anon_mkdir_write_enable=YES
 anon_other_write_enable=YES
 anon_world_readable_only=YES
 
-# FTPS - SSL/TLS - Practica 7
-ssl_enable=YES
+# FTPS - SSL/TLS - SOLO PARA u1 (Global=No para Anonimo estable)
+ssl_enable=NO
+user_config_dir=/etc/vsftpd/user_config
 allow_anon_ssl=NO
-force_local_data_ssl=YES
-force_local_logins_ssl=YES
+force_anon_data_ssl=NO
+force_anon_logins_ssl=NO
+VSFTPDEOF
+
+    # Crear configuracion especifica para permitir SSL solo a u1
+    mkdir -p /etc/vsftpd/user_config
+    cat > /etc/vsftpd/user_config/${FTP_USER} <<U1EOF
+ssl_enable=YES
+rsa_cert_file=${SSL_DIR}/vsftpd/vsftpd.crt
+rsa_private_key_file=${SSL_DIR}/vsftpd/vsftpd.key
 ssl_tlsv1=YES
 ssl_sslv2=NO
 ssl_sslv3=NO
+force_local_data_ssl=YES
+force_local_logins_ssl=YES
 require_ssl_reuse=NO
 ssl_ciphers=HIGH
-rsa_cert_file=${SSL_DIR}/vsftpd/vsftpd.crt
-rsa_private_key_file=${SSL_DIR}/vsftpd/vsftpd.key
 debug_ssl=YES
-implicit_ssl=NO
-seccomp_sandbox=NO
-VSFTPDEOF
+U1EOF
 
 
     # Crear jerarquia solicitada: u1, http
@@ -866,23 +873,25 @@ VSFTPDEOF
     # Permisos COMPLETOS para u1, RESTRINGIDOS para anonimo
     fn_info "Configurando permisos: u1=FULL, Anon=Solo Instaladores..."
     
-    # 1. Raiz del FTP: u1 puede escribir (chroot writable habilitado en config)
-    chown ${FTP_USER}:ftp "$FTP_ROOT"
-    chmod 775 "$FTP_ROOT"
+    # 1. Raiz del FTP: root:root 555 - REQUERIDO para que el anonimo no de error 500
+    chown root:root "$FTP_ROOT"
+    chmod 555 "$FTP_ROOT"
     
-    # 2. Carpeta u1 y general (u1 es dueno y tiene acceso total)
-    chown -R ${FTP_USER}:ftp "${FTP_ROOT}/u1"
-    chown -R ${FTP_USER}:ftp "${FTP_ROOT}/general"
-    chmod -R 775 "${FTP_ROOT}/u1"
-    chmod -R 775 "${FTP_ROOT}/general"
+    # 2. Carpeta u1 y general (u1 o root poseen esto)
+    chown ${FTP_USER}:ftp "${FTP_ROOT}/u1"
+    chown root:ftp "${FTP_ROOT}/general"
+    chmod 775 "${FTP_ROOT}/u1"    # Escribible por u1
+    chmod 755 "${FTP_ROOT}/general" # Solo lectura publico
     
     # 3. Carpetas de Instaladores: Anonimo puede escribir aqui
     chown -R ${FTP_USER}:ftp "${FTP_ROOT}/http"
-    chmod 775 "${FTP_ROOT}/http"
-    chmod 775 "${FTP_ROOT}/http/Linux"
-    chmod -R 777 "${FTP_ROOT}/http/Linux/apache" 2>/dev/null
-    chmod -R 777 "${FTP_ROOT}/http/Linux/nginx" 2>/dev/null
-    chmod -R 777 "${FTP_ROOT}/http/Linux/tomcat" 2>/dev/null
+    chmod 755 "${FTP_ROOT}/http"
+    chmod 755 "${FTP_ROOT}/http/Linux"
+    
+    # Solo estas subcarpetas son 777 (Escribibles por anonimo)
+    chmod 777 "${FTP_ROOT}/http/Linux/apache" 2>/dev/null
+    chmod 777 "${FTP_ROOT}/http/Linux/nginx" 2>/dev/null
+    chmod 777 "${FTP_ROOT}/http/Linux/tomcat" 2>/dev/null
     
     fn_ok "Estructura de directorios ${FTP_ROOT} creada y poblada."
     fn_info "Verificacion de carpetas (ls -R ${FTP_ROOT}):"
