@@ -871,11 +871,11 @@ VSFTPDEOF
     chown root:root "$FTP_ROOT"
     chmod 555 "$FTP_ROOT"
     
-    # 2. Carpeta u1 y general
+    # 2. Carpeta u1 y general (u1 es el dueno para tener permiso total)
     chown -R ${FTP_USER}:ftp "${FTP_ROOT}/u1"
-    chown root:ftp "${FTP_ROOT}/general"
-    chmod 775 "${FTP_ROOT}/u1"    # u1 tiene rwx total aqui
-    chmod 755 "${FTP_ROOT}/general" # Lectura para anonimo
+    chown -R ${FTP_USER}:ftp "${FTP_ROOT}/general"
+    chmod 755 "${FTP_ROOT}/u1"    # u1 (owner) tiene rwx
+    chmod 755 "${FTP_ROOT}/general" # u1 (owner) tiene rwx, Anon tiene rx
     
     # 3. Carpetas de Instaladores (Escribibles por anonimo)
     chown -R ${FTP_USER}:ftp "${FTP_ROOT}/http"
