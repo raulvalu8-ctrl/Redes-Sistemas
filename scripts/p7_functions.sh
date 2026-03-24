@@ -810,21 +810,19 @@ anon_world_readable_only=YES
 
 # FTPS - SSL/TLS - Practica 7
 ssl_enable=YES
-rsa_cert_file=${SSL_DIR}/vsftpd/vsftpd.crt
-rsa_private_key_file=${SSL_DIR}/vsftpd/vsftpd.key
+allow_anon_ssl=NO
+force_local_data_ssl=YES
+force_local_logins_ssl=YES
 ssl_tlsv1=YES
 ssl_sslv2=NO
 ssl_sslv3=NO
-force_local_data_ssl=YES
-force_local_logins_ssl=YES
 require_ssl_reuse=NO
 ssl_ciphers=HIGH
+rsa_cert_file=${SSL_DIR}/vsftpd/vsftpd.crt
+rsa_private_key_file=${SSL_DIR}/vsftpd/vsftpd.key
+debug_ssl=YES
 implicit_ssl=NO
 seccomp_sandbox=NO
-debug_ssl=YES
-allow_anon_ssl=NO
-force_anon_data_ssl=NO
-force_anon_logins_ssl=NO
 VSFTPDEOF
 
 
@@ -901,14 +899,19 @@ VSFTPDEOF
     iptables -I INPUT -p tcp --dport 10000:10100 -j ACCEPT 2>/dev/null
     fn_ok "Firewall configurado para FTP (20,21) y modo pasivo (10000-10100)"
 
-    systemctl restart vsftpd 2>/dev/null
-    if [ $? -eq 0 ]; then
-        fn_sec "vsftpd reiniciado con FTPS activado."
-        fn_ok "FTPS configurado correctamente en ${SERVER_IP}"
+    # Intentar reiniciar vsftpd
+    systemctl stop vsftpd 2>/dev/null
+    if systemctl start vsftpd; then
+        fn_sec "vsftpd reiniciado con FTPS activado con exito."
+        fn_ok "Servicio activo en ${SERVER_IP}"
     else
-        fn_err "No se pudo reiniciar vsftpd."
-        fn_info "Diagnostico del error:"
-        journalctl -u vsftpd --no-pager | tail -n 20
+        fn_err "CRITICO: vsftpd no pudo iniciar. Revisando errores..."
+        # Imprimir configuracion para backup/debug
+        fn_info "Ultimas 10 lineas de /etc/vsftpd/vsftpd.conf:"
+        tail -n 10 "$VSFTPD_CONF"
+        echo ""
+        fn_info "Error reportado por el sistema (journalctl):"
+        journalctl -u vsftpd --no-pager -n 20
         return 1
     fi
 
