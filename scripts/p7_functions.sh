@@ -826,12 +826,11 @@ VSFTPDEOF
     local FTP_ROOT="/var/ftp"
     
     # Limpieza de carpetas no deseadas
-    fn_info "Limpiando carpetas basura en Mageia (pkg, pub, grupos)..."
-    rm -rf "${FTP_ROOT}/pub" "${FTP_ROOT}/pkg" "${FTP_ROOT}/grupos" 2>/dev/null
+    fn_info "Limpiando carpetas basura en Mageia (pkg, pub, grupos, general)..."
+    rm -rf "${FTP_ROOT}/pub" "${FTP_ROOT}/pkg" "${FTP_ROOT}/grupos" "${FTP_ROOT}/general" 2>/dev/null
     
-    fn_info "Asegurando jerarquia limpia (${FTP_ROOT}/{general, u1, http/Linux})..."
+    fn_info "Asegurando jerarquia limpia (${FTP_ROOT}/{u1, http/Linux})..."
     
-    mkdir -p "${FTP_ROOT}/general"
     mkdir -p "${FTP_ROOT}/u1"
     mkdir -p "${FTP_ROOT}/http/Linux/apache"
     mkdir -p "${FTP_ROOT}/http/Linux/nginx"
