@@ -795,12 +795,16 @@ pam_service_name=vsftpd
 listen_ipv6=NO
 check_shell=NO
 
-# Acceso anonimo activado
+# Acceso anonimo activado - SOLO VISIVA (Lectura)
 anonymous_enable=YES
 no_anon_password=YES
 anon_root=/var/ftp
 allow_anon_ssl=YES
 local_root=/var/ftp
+anon_upload_enable=NO
+anon_mkdir_write_enable=NO
+anon_other_write_enable=NO
+anon_world_readable_only=YES
 
 # FTPS - SSL/TLS - Practica 7
 ssl_enable=YES
@@ -820,7 +824,12 @@ VSFTPDEOF
 
     # Crear jerarquia solicitada: general, u1, http
     local FTP_ROOT="/var/ftp"
-    fn_info "Creando jerarquia de carpetas solicitada (${FTP_ROOT}/{general, u1, http/Linux})..."
+    
+    # Limpieza de carpetas no deseadas
+    fn_info "Limpiando carpetas basura en Mageia (pkg, pub, grupos)..."
+    rm -rf "${FTP_ROOT}/pub" "${FTP_ROOT}/pkg" "${FTP_ROOT}/grupos" 2>/dev/null
+    
+    fn_info "Asegurando jerarquia limpia (${FTP_ROOT}/{general, u1, http/Linux})..."
     
     mkdir -p "${FTP_ROOT}/general"
     mkdir -p "${FTP_ROOT}/u1"

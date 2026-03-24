@@ -690,11 +690,18 @@ function fn_configurar_ftps {
     $sitePath = "C:\inetpub\ftproot"
     if (!(Test-Path $sitePath)) { New-Item -ItemType Directory -Force -Path $sitePath | Out-Null }
     
-    # Crear jerarquia solicitada: general, u1, http
-    fn_info "Creando jerarquia de carpetas solicitada (/general, /u1, /http/Windows)..."
+    # Limpieza de carpetas no deseadas
+    fn_info "Limpiando carpetas basura (pkg, pub, grupos)..."
+    $junk = @("pkg", "pub", "grupos")
+    foreach($j in $junk) {
+        $jPath = Join-Path $sitePath $j
+        if (Test-Path $jPath) { Remove-Item -Path $jPath -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+    
+    # Crear jerarquia balanceada: general, u1, http
+    fn_info "Asegurando jerarquia limpia (/general, /u1, /http/Windows)..."
     $baseFolders = @("general", "u1", "http\Windows")
     foreach($f in $baseFolders) {
-        $fullPath = Join-Join-Path $sitePath $f -ErrorAction SilentlyContinue 2>$null # Hack for subpaths
         $fullPath = "$sitePath\$f"
         if (!(Test-Path $fullPath)) { New-Item -ItemType Directory -Path $fullPath -Force | Out-Null }
     }
