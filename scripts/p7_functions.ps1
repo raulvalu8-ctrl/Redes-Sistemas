@@ -754,20 +754,35 @@ function fn_configurar_ftps {
         Set-Acl $folderPath $acl
     }
     
-    # PERMISOS DE LA RAIZ: u1 (Users) puede TODO
+    # PERMISOS DE LA RAIZ Y SUBFOLDERS: u1 (Users) puede TODO
     $acl_root = Get-Acl $sitePath
     $u1_root_p = "Users","Modify","Allow"
-    $u1_root_rule = New-Object System.Security.AccessControl.FileSystemAccessRule($u1_root_p)
+    $u1_root_rule = New-Object System.Security.AccessControl.FileSystemAccessRule($u1_root_p, "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
     $acl_root.SetAccessRule($u1_root_rule)
     
     # Pero el PUBLICO (Anonimo) en la RAIZ solo puede leer
     $pub_root_p = "Everyone","ReadAndExecute","Allow"
-    $pub_root_rule = New-Object System.Security.AccessControl.FileSystemAccessRule($pub_root_p)
+    $pub_root_rule = New-Object System.Security.AccessControl.FileSystemAccessRule($pub_root_p, "ReadAndExecute", "ContainerInherit,ObjectInherit", "None", "Allow")
     $acl_root.SetAccessRule($pub_root_rule)
     Set-Acl $sitePath $acl_root
     
-    "Sistema de Archivos P7 - IIS listo" | Out-File (Join-Path $sitePath "info.txt") -Force
-    fn_ok "Estructura de directorios en IIS creada y poblada (u1=Full, Anon=Restringido)."
+    # Asegurar que /general y /u1 heredan esto (u1=Full, Anon=Read)
+    $generalPath = Join-Path $sitePath "general"
+    $u1Path = Join-Path $sitePath "u1"
+    # No hace falta setear ACLs extra si la raiz hereda, pero lo forzamos por seguridad
+    Set-Acl $generalPath $acl_root
+    Set-Acl $u1Path $acl_root
+    
+    # EXCEPCION: Instaladores (Anonimo puede escribir AQUÍ)
+    $installers = @("apache", "nginx", "tomcat")
+    foreach ($f in $installers) {
+        $folderPath = "$sitePath\http\Windows\$f"
+        $acl = Get-Acl $folderPath
+        $p_anon = "Everyone","Modify","Allow"
+        $rule_anon = New-Object System.Security.AccessControl.FileSystemAccessRule($p_anon, "Modify", "ContainerInherit,ObjectInherit", "None", "Allow")
+        $acl.SetAccessRule($rule_anon)
+        Set-Acl $folderPath $acl
+    }
     
     $siteName = "IIS_P7_FTP"
     if (!(Get-Website -Name $siteName -ErrorAction SilentlyContinue)) {
