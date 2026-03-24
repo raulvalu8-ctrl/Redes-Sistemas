@@ -791,7 +791,8 @@ function fn_configurar_ftps {
     
     fn_info "Creando nuevo sitio FTP base: $siteName..."
     New-WebFtpSite -Name $siteName -Port 21 -PhysicalPath $sitePath -Force | Out-Null
-    Start-Sleep -Seconds 2 # Pausa para que IIS registre el objeto
+    Start-Sleep -Seconds 5 # Pausa extendida para sincronizacion total (Final Fix)
+
 
     
     fn_sec "Generando certificado SSL para FTPS..."
@@ -805,7 +806,8 @@ function fn_configurar_ftps {
     fn_info "Limpiando y creando reglas de firewall para FTPS..."
     Remove-NetFirewallRule -DisplayName "FTPS P7*" -ErrorAction SilentlyContinue
     New-NetFirewallRule -DisplayName "FTPS P7 Control" -Direction Inbound -LocalPort 21 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
-    New-NetFirewallRule -DisplayName "FTPS P7 Datos" -Direction Inbound -LocalPort 990 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
+    New-NetFirewallRule -DisplayName "FTPS P7 Pasivo" -Direction Inbound -LocalPort 10000-10100 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue | Out-Null
+
     
     fn_info "Configurando acceso ANONIMO para el servidor FTP..."
     Set-WebConfiguration "/system.ftpServer/security/authentication/anonymousAuthentication" -value @{enabled="true"} -PSPath "IIS:\Sites\$siteName"
@@ -830,12 +832,15 @@ function fn_configurar_ftps {
     $acl.SetAccessRule($accessRule)
     Set-Acl $sitePath $acl
     
+    # REINICIO DE SERVICIO: Forzar a IIS a leer la nueva config
+    fn_info "Reiniciando Servicio FTP para aplicar cambios..."
+    Restart-Service ftpsvc -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+    
     # INTENTO ARRANQUE: Ignorar si el objeto aun no es "valido" para PowerShell
     try {
         Start-Website -Name $siteName -ErrorAction SilentlyContinue | Out-Null
-    } catch {
-        # El sitio se activara solo tras unos segundos
-    }
+    } catch { }
     
     fn_ok "FTPS (IIS) Completado: $script:DOMINIO (Escritura SOLO en instaladores)."
     $script:RESUMEN_INSTALACIONES += "[IIS FTP] FTPS Activo | Escritura: SOLO INSTALADORES | Puerto: 21"
