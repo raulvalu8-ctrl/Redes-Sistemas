@@ -1,0 +1,11 @@
+Nombre,Apellido,Usuario,Password,Departamento,Email
+Juan,Garcia,jgarcia,P@ss1234!,Cuates,jgarcia@lab.local
+Maria,Lopez,mlopez,P@ss1234!,Cuates,mlopez@lab.local
+Carlos,Ruiz,cruiz,P@ss1234!,Cuates,cruiz@lab.local
+Ana,Martinez,amartinez,P@ss1234!,Cuates,amartinez@lab.local
+Luis,Hernandez,lhernandez,P@ss1234!,Cuates,lhernandez@lab.local
+Rosa,Perez,rperez,P@ss1234!,NoCuates,rperez@lab.local
+Pedro,Sanchez,psanchez,P@ss1234!,NoCuates,psanchez@lab.local
+Laura,Gomez,lgomez,P@ss1234!,NoCuates,lgomez@lab.local
+Miguel,Torres,mtorres,P@ss1234!,NoCuates,mtorres@lab.local
+Sofia,Ramirez,sramirez,P@ss1234!,NoCuates,sramirez@lab.local
