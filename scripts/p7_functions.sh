@@ -274,11 +274,17 @@ fn_generar_certificado_ssl() {
         2>/dev/null
 
     if [ $? -eq 0 ]; then
+        # Generar PKCS12 (para Tomcat)
+        openssl pkcs12 -export -in "${CERT_DIR}/server.crt" -inkey "${CERT_DIR}/server.key" \
+            -out "${CERT_DIR}/server.p12" -name "tomcat" \
+            -passout pass:practica7 2>/dev/null
+        
         chmod 600 "${CERT_DIR}/server.key"
+        chmod 600 "${CERT_DIR}/server.p12"
         chmod 644 "${CERT_DIR}/server.crt"
-        fn_sec "Certificado generado:"
+        fn_sec "Certificado generado (formatos CRT y P12):"
         fn_sec "  Clave:       ${CERT_DIR}/server.key"
-        fn_sec "  Certificado: ${CERT_DIR}/server.crt"
+        fn_sec "  P12:         ${CERT_DIR}/server.p12"
         fn_sec "  Dominio:     ${DOMINIO}"
         fn_sec "  Validez:     365 dias"
         return 0
@@ -655,7 +661,7 @@ fn_instalar_tomcat_ftp() {
         [ -z "$PUERTO_SSL" ] && PUERTO_SSL="443"
         SSL_LABEL="Si (puerto $PUERTO_SSL)"
 
-        sed -i "s|</Service>|    <Connector port=\"$PUERTO_SSL\" protocol=\"org.apache.coyote.http11.Http11NioProtocol\"\n               SSLEnabled=\"true\" scheme=\"https\" secure=\"true\"\n               keystoreFile=\"${CERT_DIR}/server.crt\"\n               keystorePass=\"practica7\"\n               clientAuth=\"false\" sslProtocol=\"TLS\" />\n</Service>|" \
+        sed -i "s|</Service>|    <Connector port=\"$PUERTO_SSL\" address=\"0.0.0.0\" protocol=\"org.apache.coyote.http11.Http11NioProtocol\"\n               SSLEnabled=\"true\" scheme=\"https\" secure=\"true\"\n               keystoreFile=\"${CERT_DIR}/server.p12\"\n               keystorePass=\"practica7\"\n               keystoreType=\"PKCS12\"\n               clientAuth=\"false\" sslProtocol=\"TLS\" />\n</Service>|" \
             "${TOMCAT_BASE}/conf/server.xml"
 
         fn_sec "SSL configurado en Tomcat puerto $PUERTO_SSL"
@@ -1116,7 +1122,7 @@ HTMLEOF
                     
                     # Añadir el conector SSL al final del bloque <Service>
                     if ! grep -q "port=\"$PUERTO_SSL\"" "$TC_CONF"; then
-                        sed -i "s|</Service>|    <Connector port=\"$PUERTO_SSL\" address=\"0.0.0.0\" protocol=\"org.apache.coyote.http11.Http11NioProtocol\"\n               SSLEnabled=\"true\" scheme=\"https\" secure=\"true\"\n               keystoreFile=\"${CERT_DIR}/server.crt\"\n               keystorePass=\"practica7\"\n               clientAuth=\"false\" sslProtocol=\"TLS\" />\n</Service>|" "$TC_CONF"
+                        sed -i "s|</Service>|    <Connector port=\"$PUERTO_SSL\" address=\"0.0.0.0\" protocol=\"org.apache.coyote.http11.Http11NioProtocol\"\n               SSLEnabled=\"true\" scheme=\"https\" secure=\"true\"\n               keystoreFile=\"${CERT_DIR}/server.p12\"\n               keystorePass=\"practica7\"\n               keystoreType=\"PKCS12\"\n               clientAuth=\"false\" sslProtocol=\"TLS\" />\n</Service>|" "$TC_CONF"
                     fi
                 fi
                 iptables -I INPUT -p tcp --dport "$PUERTO" -j ACCEPT 2>/dev/null
